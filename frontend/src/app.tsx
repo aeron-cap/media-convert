@@ -19,6 +19,7 @@ import {
 import { BatchGroup } from "./components/BatchGroup";
 import { ConvertForm } from "./components/ConvertForm";
 import { JobItem } from "./components/JobItem";
+import { formatQuality } from "./format";
 
 // How often the list is reloaded: quickly while conversions are waiting or
 // running, slowly otherwise (to notice conversions that expired).
@@ -35,6 +36,7 @@ export function App() {
   const [formats, setFormats] = useState<FormatInfo[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   // Jobs currently followed live, by id, with the function that stops each.
   const watchers = useRef(new Map<string, () => void>());
   const jobsRef = useRef<Job[]>([]);
@@ -136,20 +138,33 @@ export function App() {
   }
 
   async function changeJobQuality(job: Job, quality: string) {
+    // A finished conversion has to be fetched and converted again.
+    if (
+      job.status !== "queued" &&
+      !confirm("Convert this again at the new quality? The current file is replaced.")
+    ) {
+      return;
+    }
     setActionError(null);
     try {
       upsert(await updateJobQuality(job.id, quality));
     } catch (cause) {
-      // Most likely it started in the meantime; show the server's reason.
+      // Most likely it is running by now; show the server's reason.
       setActionError(cause instanceof ApiError ? cause.message : "Couldn't change the quality.");
       reload().catch(() => {});
     }
   }
 
-  async function changeBatchQuality(batchId: string, quality: string) {
+  async function changeBatchQuality(batchId: string, quality: string, includeFinished: boolean) {
+    if (
+      includeFinished &&
+      !confirm("Convert this playlist's videos again at the new quality? Their files are replaced.")
+    ) {
+      return;
+    }
     setActionError(null);
     try {
-      const updated = await updateBatchQuality(batchId, quality);
+      const updated = await updateBatchQuality(batchId, quality, includeFinished);
       setBatches((current) => current.map((b) => (b.id === batchId ? updated.batch : b)));
       const fresh = new Map(updated.jobs.map((job) => [job.id, job]));
       // Jobs followed live are already newer than this answer; keep those.
@@ -174,11 +189,45 @@ export function App() {
     }
   }
 
+  // The text the search box looks through for one conversion: its title,
+  // its type (the format and whether that is audio or video) and its quality,
+  // both as shown ("720p", "320 kbps") and as stored ("720", "best").
+  function searchText(job: Job): string {
+    const format = formats.find((f) => f.id === job.format);
+    const batch = batches.find((b) => b.id === job.batch_id);
+    return [
+      job.title ?? job.url,
+      batch?.title,
+      batch ? "playlist" : "",
+      format?.label ?? job.format,
+      format?.kind,
+      format ? formatQuality(format.kind, job.quality) : "",
+      job.quality,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  // Every word typed has to appear somewhere. A playlist is shown whole when
+  // any of its videos matches, so its counts and "Remove all" stay truthful.
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (job: Job) => {
+    const text = searchText(job);
+    return words.every((word) => text.includes(word));
+  };
+  const matchingBatches = new Set(
+    words.length > 0 ? jobs.filter((j) => j.batch_id != null && matches(j)).map((j) => j.batch_id) : [],
+  );
+
   // Single conversions stay as they are; a playlist's conversions are shown
   // together, at the place of its newest one.
   const groups: ({ job: Job } | { batchId: string; jobs: Job[] })[] = [];
   const seenBatches = new Set<string>();
   for (const job of jobs) {
+    if (words.length > 0 && !(job.batch_id == null ? matches(job) : matchingBatches.has(job.batch_id))) {
+      continue;
+    }
     if (job.batch_id == null) {
       groups.push({ job });
     } else if (!seenBatches.has(job.batch_id)) {
@@ -227,6 +276,29 @@ export function App() {
           {actionError && (
             <p class="error" role="alert">
               {actionError}
+            </p>
+          )}
+          {jobs.length > 0 && (
+            <div class="queue-search">
+              <label class="visually-hidden" for="queue-search">
+                Search the queue by title, quality or type
+              </label>
+              <input
+                id="queue-search"
+                type="search"
+                placeholder="Search title, quality or type (for example: mp3, 720p, video)"
+                autocomplete="off"
+                value={search}
+                onInput={(event) => setSearch(event.currentTarget.value)}
+              />
+            </div>
+          )}
+          {jobs.length > 0 && groups.length === 0 && (
+            <p class="empty">
+              Nothing in the queue matches "{search.trim()}".{" "}
+              <button type="button" class="button quiet" onClick={() => setSearch("")}>
+                Clear search
+              </button>
             </p>
           )}
           {jobs.length === 0 && !loadError && (

@@ -68,7 +68,7 @@ export function ConvertForm({
   }
 
   return (
-    <section class="pane" aria-labelledby="convert-title">
+    <section class="pane convert" aria-labelledby="convert-title">
       <div class="pane-head">
         <h2 class="pane-title" id="convert-title">
           Convert

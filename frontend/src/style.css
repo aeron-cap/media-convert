@@ -29,9 +29,9 @@ body {
 }
 
 .page {
-  max-width: 72rem;
+  max-width: 110rem;
   margin: 0 auto;
-  padding: 2rem 1rem 4rem;
+  padding: 1.5rem 1.5rem 2rem;
 }
 
 .masthead {
@@ -55,7 +55,8 @@ h1 {
 
 .workbench {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  /* The converter keeps a comfortable reading width; the queue takes the rest. */
+  grid-template-columns: minmax(24rem, 34rem) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -499,4 +500,81 @@ summary:focus-visible,
 .options,
 .jobs {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* With a quality menu, Download and Remove in one row, the title is squeezed
+   to a few letters. Let the actions drop to their own line instead. */
+.job,
+.batch-head {
+  flex-wrap: wrap;
+}
+
+.job-body {
+  flex: 1 1 13rem;
+}
+
+.job-actions {
+  margin-left: auto;
+}
+
+/* --- Queue search --- */
+
+.queue-search input {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.queue-search input::placeholder {
+  color: var(--muted);
+}
+
+/* --- Fixed-height workbench ---
+   Side by side, the two panes fill the window and never grow past it: the
+   queue's list scrolls inside its pane, and so does the converter when a
+   playlist makes it tall. Stacked on narrow screens, the page scrolls as
+   usual, since a fixed box inside a scrolling page is awkward on a phone. */
+
+@media (min-width: 56.01rem) {
+  .page {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 34rem;
+  }
+
+  .workbench {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .pane {
+    min-height: 0;
+  }
+
+  .convert {
+    align-content: start;
+    overflow-y: auto;
+  }
+
+  .queue {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .queue > .jobs {
+    flex: 1;
+    min-height: 0;
+    align-content: start;
+    overflow-y: auto;
+    /* Keeps the scrollbar off the buttons. */
+    padding-right: 0.5rem;
+    scrollbar-gutter: stable;
+  }
 }
