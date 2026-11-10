@@ -71,7 +71,13 @@ class Worker:
 
         try:
             path = converter.convert(
-                job["url"], job["format"], self.settings.files_dir, job_id, on_info, on_progress
+                job["url"],
+                job["format"],
+                job["quality"],
+                self.settings.files_dir,
+                job_id,
+                on_info,
+                on_progress,
             )
         except ConversionError as error:
             self._fail(job_id, str(error))

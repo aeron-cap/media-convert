@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     id          TEXT PRIMARY KEY,
     url         TEXT NOT NULL,
     format      TEXT NOT NULL,
+    quality     TEXT,
     status      TEXT NOT NULL DEFAULT 'queued',
     stage       TEXT,
     progress    REAL NOT NULL DEFAULT 0,
@@ -59,13 +60,17 @@ class Database:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            # Columns added after the first release, for databases created before.
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+            if "quality" not in columns:
+                conn.execute("ALTER TABLE jobs ADD COLUMN quality TEXT")
 
-    def create_job(self, url: str, format: str) -> dict[str, Any]:
+    def create_job(self, url: str, format: str, quality: str | None = None) -> dict[str, Any]:
         job_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO jobs (id, url, format, created_at) VALUES (?, ?, ?, ?)",
-                (job_id, url, format, now()),
+                "INSERT INTO jobs (id, url, format, quality, created_at) VALUES (?, ?, ?, ?, ?)",
+                (job_id, url, format, quality, now()),
             )
         job = self.get_job(job_id)
         assert job is not None

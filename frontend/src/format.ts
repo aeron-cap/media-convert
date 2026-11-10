@@ -13,3 +13,10 @@ export function formatSize(bytes: number | null): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
+
+/** "320 kbps", "720p" or "Best quality"; empty when the format has no choice. */
+export function formatQuality(kind: "audio" | "video", quality: string | null): string {
+  if (quality == null) return "";
+  if (kind === "audio") return `${quality} kbps`;
+  return quality === "best" ? "Best quality" : `${quality}p`;
+}

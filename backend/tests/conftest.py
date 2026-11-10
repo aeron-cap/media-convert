@@ -24,8 +24,8 @@ def fake_convert(monkeypatch):
     """Replace the real download/convert step with one that writes a small file."""
     calls = []
 
-    def convert(url, format, out_dir, job_id, on_info, on_progress):
-        calls.append((url, format))
+    def convert(url, format, quality, out_dir, job_id, on_info, on_progress):
+        calls.append((url, format, quality))
         on_info(
             {
                 "video_id": "abc123",
@@ -33,6 +33,7 @@ def fake_convert(monkeypatch):
                 "thumbnail": "https://example.test/thumb.jpg",
                 "duration": 61,
                 "uploader": "Someone",
+                "max_height": 720,
             }
         )
         on_progress("downloading", 0.5)

@@ -9,7 +9,7 @@ from .. import converter
 from ..config import get_settings
 from ..converter import ConversionError
 from ..db import UNFINISHED, Database
-from ..models import Job, JobCreate, ProbeRequest, VideoInfo
+from ..models import FormatInfo, Job, JobCreate, ProbeRequest, VideoInfo
 from ..worker import Worker
 
 router = APIRouter()
@@ -39,6 +39,21 @@ def _get_or_404(request: Request, job_id: str) -> dict:
 # yt-dlp and SQLite calls below don't stall the event loop.
 
 
+@router.get("/formats", response_model=list[FormatInfo])
+def list_formats() -> list[dict]:
+    return [
+        {
+            "id": format_id,
+            "label": spec["label"],
+            "kind": spec["kind"],
+            "qualities": spec["qualities"],
+            "default_quality": converter.default_quality(format_id),
+            "note": spec.get("note"),
+        }
+        for format_id, spec in converter.FORMATS.items()
+    ]
+
+
 @router.post("/probe", response_model=VideoInfo)
 def probe(body: ProbeRequest) -> dict:
     try:
@@ -51,9 +66,10 @@ def probe(body: ProbeRequest) -> dict:
 def create_job(body: JobCreate, request: Request) -> Job:
     try:
         url = converter.validate_url(body.url)
+        quality = converter.normalize_quality(body.format, body.quality)
     except ConversionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    row = _db(request).create_job(url, body.format)
+    row = _db(request).create_job(url, body.format, quality)
     _worker(request).submit(row["id"])
     return Job.from_row(row)
 

@@ -1,4 +1,4 @@
-export type Format = "mp3" | "mp4";
+export type Format = string;
 export type Status = "queued" | "running" | "done" | "failed";
 
 export interface VideoInfo {
@@ -7,12 +7,25 @@ export interface VideoInfo {
   thumbnail: string | null;
   duration: number | null;
   uploader: string | null;
+  /** Height in pixels of the best video stream available. */
+  max_height: number | null;
+}
+
+export interface FormatInfo {
+  id: Format;
+  label: string;
+  kind: "audio" | "video";
+  /** Bitrates in kbps for audio, maximum heights or "best" for video. */
+  qualities: string[];
+  default_quality: string | null;
+  note: string | null;
 }
 
 export interface Job {
   id: string;
   url: string;
   format: Format;
+  quality: string | null;
   status: Status;
   stage: string | null;
   progress: number;
@@ -62,8 +75,12 @@ export function probe(url: string): Promise<VideoInfo> {
   return request<VideoInfo>("/api/probe", { url });
 }
 
-export function createJob(url: string, format: Format): Promise<Job> {
-  return request<Job>("/api/jobs", { url, format });
+export function listFormats(): Promise<FormatInfo[]> {
+  return request<FormatInfo[]>("/api/formats");
+}
+
+export function createJob(url: string, format: Format, quality: string | null): Promise<Job> {
+  return request<Job>("/api/jobs", { url, format, quality });
 }
 
 export function listJobs(): Promise<Job[]> {

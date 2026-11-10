@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { isActive, listJobs, watchJob, type Job } from "./api";
+import { isActive, listFormats, listJobs, watchJob, type FormatInfo, type Job } from "./api";
 import { ConvertForm } from "./components/ConvertForm";
 import { JobItem } from "./components/JobItem";
 
 export function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [formats, setFormats] = useState<FormatInfo[]>([]);
   const [loadError, setLoadError] = useState(false);
   // Jobs currently being followed, by id, with the function that stops each.
   const watchers = useRef(new Map<string, () => void>());
@@ -28,10 +29,11 @@ export function App() {
   }
 
   useEffect(() => {
-    listJobs()
-      .then((loaded) => {
-        setJobs(loaded);
-        loaded.forEach(follow);
+    Promise.all([listFormats(), listJobs()])
+      .then(([loadedFormats, loadedJobs]) => {
+        setFormats(loadedFormats);
+        setJobs(loadedJobs);
+        loadedJobs.forEach(follow);
       })
       .catch(() => setLoadError(true));
     return () => {
@@ -52,11 +54,11 @@ export function App() {
         <p class="lead">Convert YouTube videos to audio and video files.</p>
       </header>
 
-      <ConvertForm onJobCreated={onJobCreated} />
+      <ConvertForm formats={formats} onJobCreated={onJobCreated} />
 
       {loadError && (
         <p class="error" role="alert">
-          Can't load your conversions. Check that the server is running, then reload.
+          Can't reach the server. Check that it's running, then reload.
         </p>
       )}
 
@@ -65,7 +67,7 @@ export function App() {
           <h2 class="section-title">Conversions</h2>
           <ul class="jobs">
             {jobs.map((job) => (
-              <JobItem key={job.id} job={job} />
+              <JobItem key={job.id} job={job} formats={formats} />
             ))}
           </ul>
         </section>

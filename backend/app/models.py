@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Format = Literal["mp3", "mp4"]
+Format = Literal["mp3", "m4a", "ogg", "flac", "wav", "mp4", "webm", "mkv"]
 Status = Literal["queued", "running", "done", "failed"]
 
 
@@ -16,17 +16,31 @@ class VideoInfo(BaseModel):
     thumbnail: str | None
     duration: int | None
     uploader: str | None
+    # Height in pixels of the best video stream, to limit the quality choices.
+    max_height: int | None
+
+
+class FormatInfo(BaseModel):
+    id: Format
+    label: str
+    kind: Literal["audio", "video"]
+    qualities: list[str]
+    default_quality: str | None
+    note: str | None
 
 
 class JobCreate(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
     format: Format
+    # Audio bitrate in kbps or maximum video height; omit for the default.
+    quality: str | None = Field(default=None, max_length=16)
 
 
 class Job(BaseModel):
     id: str
     url: str
     format: Format
+    quality: str | None
     status: Status
     stage: str | None
     progress: float

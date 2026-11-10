@@ -1,8 +1,14 @@
-import { isActive, type Job } from "../api";
-import { formatDuration, formatSize } from "../format";
+import { isActive, type FormatInfo, type Job } from "../api";
+import { formatDuration, formatQuality, formatSize } from "../format";
 
-export function JobItem({ job }: { job: Job }) {
-  const details = [job.format.toUpperCase(), formatDuration(job.duration), formatSize(job.filesize)]
+export function JobItem({ job, formats }: { job: Job; formats: FormatInfo[] }) {
+  const format = formats.find((f) => f.id === job.format);
+  const details = [
+    format?.label ?? job.format.toUpperCase(),
+    format ? formatQuality(format.kind, job.quality) : "",
+    formatDuration(job.duration),
+    formatSize(job.filesize),
+  ]
     .filter(Boolean)
     .join(" · ");
 
