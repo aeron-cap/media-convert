@@ -14,8 +14,9 @@ export function JobItem({
   onQualityChange: (job: Job, quality: string) => void;
 }) {
   const format = formats.find((f) => f.id === job.format);
-  // Quality can still be changed while the conversion waits for its turn.
-  const adjustable = job.status === "queued" && format != null && format.qualities.length > 0;
+  // Quality can be changed while the conversion waits, and again once it has
+  // finished (it is then converted again); only a running one is fixed.
+  const adjustable = job.status !== "running" && format != null && format.qualities.length > 0;
   const details = [
     format?.label ?? job.format.toUpperCase(),
     format && !adjustable ? formatQuality(format.kind, job.quality) : "",

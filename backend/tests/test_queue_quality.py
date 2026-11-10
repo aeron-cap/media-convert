@@ -1,4 +1,4 @@
-"""Changing the quality of conversions that are still waiting to start."""
+"""Changing the quality of conversions that are waiting or already finished."""
 
 import threading
 
@@ -69,19 +69,71 @@ def test_waiting_job_converts_at_its_new_quality(one_at_a_time, client, held_con
     assert calls == [(URL, "mp4", "best"), (URL, "mp4", "720")]
 
 
-def test_started_job_cannot_be_changed(one_at_a_time, client, held_convert):
+def test_running_job_cannot_be_changed(one_at_a_time, client, held_convert):
     release, calls = held_convert
     job = start(client)
     wait_until_running(client, job["id"])
 
     refused = client.patch(f"/api/jobs/{job['id']}", json={"quality": "720"})
     assert refused.status_code == 409
-    assert "already started" in refused.json()["detail"]
+    assert "running" in refused.json()["detail"]
 
     release.set()
-    done = wait_for_job(client, job["id"])
-    assert done["quality"] == "best"
-    assert client.patch(f"/api/jobs/{job['id']}", json={"quality": "720"}).status_code == 409
+    assert wait_for_job(client, job["id"])["quality"] == "best"
+
+
+def test_finished_job_is_converted_again_at_the_new_quality(client, held_convert, tmp_path):
+    release, calls = held_convert
+    release.set()
+    job = start(client)
+    first = wait_for_job(client, job["id"])
+    file = tmp_path / "files" / f"{job['id']}.mp4"
+    file.write_bytes(b"the old, larger file")
+
+    # Asking for the quality it already has changes nothing.
+    same = client.patch(f"/api/jobs/{job['id']}", json={"quality": "best"})
+    assert same.json()["status"] == "done"
+    assert file.read_bytes() == b"the old, larger file"
+
+    release.clear()
+    again = client.patch(f"/api/jobs/{job['id']}", json={"quality": "480"})
+    assert again.status_code == 200
+    assert again.json()["status"] in ("queued", "running")
+    assert again.json()["quality"] == "480"
+    assert again.json()["download_url"] is None
+    assert again.json()["filesize"] is None
+    # The old file is gone at once, and can't be downloaded meanwhile.
+    assert not file.exists()
+    assert client.get(f"/api/jobs/{job['id']}/file").status_code == 409
+
+    release.set()
+    second = wait_for_job(client, job["id"])
+    assert second["status"] == "done"
+    assert second["id"] == first["id"]
+    assert client.get(second["download_url"]).content == b"fake media"
+    assert calls == [(URL, "mp4", "best"), (URL, "mp4", "480")]
+    assert len(client.get("/api/jobs").json()) == 1
+
+
+def test_failed_job_can_be_tried_again(client, monkeypatch):
+    outcomes = [converter.ConversionError("This video is unavailable on YouTube."), None]
+
+    def convert(url, format, quality, out_dir, job_id, on_info, on_progress):
+        outcome = outcomes.pop(0)
+        if outcome:
+            raise outcome
+        path = out_dir / f"{job_id}.{format}"
+        path.write_bytes(b"fake media")
+        return path
+
+    monkeypatch.setattr(converter, "convert", convert)
+    job = start(client)
+    assert wait_for_job(client, job["id"])["status"] == "failed"
+
+    client.patch(f"/api/jobs/{job['id']}", json={"quality": "best"})
+    retried = wait_for_job(client, job["id"])
+    assert retried["status"] == "done"
+    assert retried["error"] is None
 
 
 def test_quality_must_suit_the_format(one_at_a_time, client, held_convert):
@@ -129,5 +181,18 @@ def test_playlist_change_applies_to_waiting_videos_only(one_at_a_time, client, h
     for job in created["jobs"]:
         wait_for_job(client, job["id"])
     assert [quality for _, _, quality in calls] == ["128", "320", "320", "320"]
-    # Nothing is left waiting, so there is nothing to change.
+    # Nothing is left waiting, so there is nothing to change...
     assert client.patch(f"/api/batches/{batch_id}", json={"quality": "192"}).status_code == 409
+    # ...unless the finished videos are converted again too. Those already at
+    # the new quality are left alone.
+    redo = client.patch(
+        f"/api/batches/{batch_id}", json={"quality": "320", "include_finished": True}
+    )
+    assert redo.status_code == 200
+    for job in created["jobs"]:
+        assert wait_for_job(client, job["id"])["quality"] == "320"
+    assert [quality for _, _, quality in calls] == ["128", "320", "320", "320", "320"]
+    unchanged = client.patch(
+        f"/api/batches/{batch_id}", json={"quality": "320", "include_finished": True}
+    )
+    assert unchanged.status_code == 409

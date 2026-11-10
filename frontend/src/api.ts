@@ -143,17 +143,28 @@ export function listJobs(): Promise<Job[]> {
   return request<Job[]>("/api/jobs");
 }
 
-/** Change the quality of a job that is still waiting to start. */
+/**
+ * Change a job's quality. A waiting job starts at the new quality; a finished
+ * one is converted again and its file replaced.
+ */
 export function updateJobQuality(jobId: string, quality: string): Promise<Job> {
   return request<Job>(`/api/jobs/${jobId}`, { quality }, "PATCH");
 }
 
-/** Change the quality of a playlist's videos that are still waiting. */
+/**
+ * Change the quality of a playlist's waiting videos and, with
+ * `includeFinished`, convert its finished ones again too.
+ */
 export function updateBatchQuality(
   batchId: string,
   quality: string,
+  includeFinished: boolean,
 ): Promise<{ batch: Batch; jobs: Job[] }> {
-  return request<{ batch: Batch; jobs: Job[] }>(`/api/batches/${batchId}`, { quality }, "PATCH");
+  return request<{ batch: Batch; jobs: Job[] }>(
+    `/api/batches/${batchId}`,
+    { quality, include_finished: includeFinished },
+    "PATCH",
+  );
 }
 
 /** Delete a job and its file; a queued or running job is cancelled. */

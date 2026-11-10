@@ -6,9 +6,9 @@ from fastapi.responses import StreamingResponse
 from .. import converter
 from ..config import get_settings
 from ..converter import ConversionError
-from ..models import Batch, BatchCreate, BatchCreated, Job, QualityUpdate
+from ..models import Batch, BatchCreate, BatchCreated, BatchQualityUpdate, Job
 from ..zipstream import unique_names, zip_stream
-from .jobs import _check_room, _db, _remove, _worker, new_quality
+from .jobs import _check_room, _db, _remove, _worker, new_quality, reconvert
 
 router = APIRouter()
 
@@ -65,18 +65,27 @@ def list_batches(request: Request) -> list[Batch]:
 
 
 @router.patch("/batches/{batch_id}", response_model=BatchCreated)
-def update_batch(batch_id: str, body: QualityUpdate, request: Request) -> dict:
+def update_batch(batch_id: str, body: BatchQualityUpdate, request: Request) -> dict:
     """Change the quality of the playlist's videos that are still waiting.
 
-    Videos that are running or finished keep the quality they started with.
+    With `include_finished`, finished videos at another quality are converted
+    again as well. Running videos always keep the quality they started with.
     """
     batch = _get_or_404(request, batch_id)
     quality = new_quality(batch["format"], body.quality)
     db = _db(request)
-    if not db.set_batch_quality(batch_id, quality):
+    changed = db.set_batch_quality(batch_id, quality)
+    if body.include_finished:
+        for job in db.batch_jobs(batch_id):
+            redo = job["status"] == "failed" or (job["status"] == "done" and job["quality"] != quality)
+            if redo and reconvert(request, job["id"], quality):
+                changed += 1
+        if changed:
+            db.set_batch_label(batch_id, quality)
+    if not changed:
         raise HTTPException(
             status_code=409,
-            detail="Every video in this playlist has already started, so nothing was changed.",
+            detail="No video in this playlist could be changed: they are running or already at that quality.",
         )
     retention = get_settings().retention_hours
     return {

@@ -146,6 +146,19 @@ class Database:
                 (quality, job_id),
             ).rowcount > 0
 
+    def requeue_job(self, job_id: str, quality: str | None) -> bool:
+        """Send a finished job back to the queue at `quality`; False if it isn't finished.
+
+        The caller deletes the old file and hands the job to the worker.
+        """
+        with self._connect() as conn:
+            return conn.execute(
+                "UPDATE jobs SET quality = ?, status = 'queued', stage = NULL, progress = 0, "
+                "error = NULL, filename = NULL, filesize = NULL, started_at = NULL, "
+                "finished_at = NULL WHERE id = ? AND status IN ('done', 'failed')",
+                (quality, job_id),
+            ).rowcount > 0
+
     def set_batch_quality(self, batch_id: str, quality: str | None) -> int:
         """Change the quality of a batch's waiting jobs; returns how many."""
         with self._connect() as conn:
@@ -153,9 +166,14 @@ class Database:
                 "UPDATE jobs SET quality = ? WHERE batch_id = ? AND status = 'queued'",
                 (quality, batch_id),
             ).rowcount
-            if changed:
-                conn.execute("UPDATE batches SET quality = ? WHERE id = ?", (quality, batch_id))
+        if changed:
+            self.set_batch_label(batch_id, quality)
         return changed
+
+    def set_batch_label(self, batch_id: str, quality: str | None) -> None:
+        """Record the quality most recently chosen for a batch."""
+        with self._connect() as conn:
+            conn.execute("UPDATE batches SET quality = ? WHERE id = ?", (quality, batch_id))
 
     def count_unfinished(self) -> int:
         with self._connect() as conn:

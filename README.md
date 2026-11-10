@@ -116,13 +116,13 @@ The page talks to the server through these. Interactive documentation is at
 | `GET` | `/api/jobs` | Lists all conversions, newest first. |
 | `DELETE` | `/api/jobs` | Removes every finished conversion and its file. |
 | `GET` | `/api/jobs/{id}` | Returns one conversion and its status. |
-| `PATCH` | `/api/jobs/{id}` | Changes the quality of a conversion that hasn't started yet. |
+| `PATCH` | `/api/jobs/{id}` | Changes a conversion's quality. A finished one is converted again and its file replaced. |
 | `DELETE` | `/api/jobs/{id}` | Removes one conversion; cancels it if it is still running. |
 | `GET` | `/api/jobs/{id}/events` | Sends live progress updates for one conversion. |
 | `GET` | `/api/jobs/{id}/file` | Downloads the finished file. |
 | `POST` | `/api/batches` | Starts converting the chosen videos of a playlist. |
 | `GET` | `/api/batches` | Lists playlist conversions. |
-| `PATCH` | `/api/batches/{id}` | Changes the quality of a playlist's videos that haven't started yet. |
+| `PATCH` | `/api/batches/{id}` | Changes the quality of a playlist's waiting videos and, if asked, converts its finished ones again. |
 | `DELETE` | `/api/batches/{id}` | Removes a playlist conversion and all its files. |
 | `GET` | `/api/batches/{id}/zip` | Downloads a playlist's finished files as one zip. |
 
@@ -192,9 +192,11 @@ Things the app can't do, or doesn't do well:
   bot check, especially on datacenter connections.
 - **Conversions don't survive a restart.** One that was running when the
   server stopped is marked as failed and has to be started again.
-- **Only quality can be changed after starting, and only while waiting.** A
-  conversion that is already running keeps its quality, and the format can't
-  be changed at all; cancel it and start again instead.
+- **Changing the quality of a finished file downloads it again.** The app
+  keeps only the converted file, not YouTube's original, so a new quality
+  means fetching the video again; the old file is removed straight away.
+- **A running conversion can't be changed,** and the format can't be changed
+  at all. Cancel it and start again instead.
 - **Cancelling isn't instant** once a download has finished and ffmpeg is
   converting; it stops when that step ends.
 - **WEBM can be slow**, because the video is re-encoded when YouTube has no

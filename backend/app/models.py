@@ -57,9 +57,14 @@ class JobCreate(BaseModel):
 
 
 class QualityUpdate(BaseModel):
-    """A new quality for conversions that are still waiting to start."""
+    """A new quality for conversions that are waiting or already finished."""
 
     quality: str = Field(min_length=1, max_length=16)
+
+
+class BatchQualityUpdate(QualityUpdate):
+    # Also convert the playlist's finished videos again, replacing their files.
+    include_finished: bool = False
 
 
 class Job(BaseModel):

@@ -143,15 +143,32 @@ def new_quality(format: str, quality: str) -> str:
 
 @router.patch("/jobs/{job_id}", response_model=Job)
 def update_job(job_id: str, body: QualityUpdate, request: Request) -> Job:
-    """Change the quality of a job that is still waiting to start."""
+    """Change a job's quality.
+
+    A waiting job simply starts at the new quality. A finished one is converted
+    again from YouTube and its file replaced. A running one can't be changed.
+    """
     row = _get_or_404(request, job_id)
     quality = new_quality(row["format"], body.quality)
-    if not _db(request).set_queued_quality(job_id, quality):
+    if row["status"] == "done" and row["quality"] == quality:
+        return _job(row)
+    if not (_db(request).set_queued_quality(job_id, quality) or reconvert(request, job_id, quality)):
         raise HTTPException(
             status_code=409,
-            detail="This conversion has already started, so its quality can't be changed.",
+            detail="This conversion is running, so its quality can't be changed right now.",
         )
     return _job(_get_or_404(request, job_id))
+
+
+def reconvert(request: Request, job_id: str, quality: str | None) -> bool:
+    """Convert a finished job again at `quality`; False if it isn't finished."""
+    if not _db(request).requeue_job(job_id, quality):
+        return False
+    # The job only runs once it is submitted, so the old file is gone before
+    # the new download starts writing under the same name.
+    converter.remove_files(get_settings().files_dir, job_id)
+    _worker(request).submit(job_id)
+    return True
 
 
 @router.get("/jobs/{job_id}", response_model=Job)
