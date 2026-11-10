@@ -1,6 +1,6 @@
-# TITLE_HERE
+# Media Convert
 
-A small web app that turns YouTube videos and playlists into audio or video
+Media Convert is a small web app that turns YouTube videos and playlists into audio or video
 files. Paste a link, pick a format, and download the result.
 
 - **Audio:** MP3, M4A, OGG, FLAC, WAV

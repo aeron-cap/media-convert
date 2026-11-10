@@ -1,4 +1,4 @@
-Media Converter (YT only for now)
+Media Convert (YT only for now)
 
 This is a web application that allows users to convert media files from YouTube into different formats. The application supports various output formats such as MP3, MP4, and more. Users can input the URL of the YouTube video they wish to convert, select their desired output format, and initiate the conversion process. The converted file can then be downloaded directly from the application.
 

@@ -250,7 +250,7 @@ export function App() {
   return (
     <main class="page">
       <header class="masthead">
-        <h1>Media Converter</h1>
+        <h1>Media Convert</h1>
         <p class="lead">YouTube videos and playlists to audio and video files.</p>
       </header>
 

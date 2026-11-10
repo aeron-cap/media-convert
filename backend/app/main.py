@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="Media Converter", lifespan=lifespan)
+    app = FastAPI(title="Media Convert", lifespan=lifespan)
     app.include_router(api_router)
 
     @app.middleware("http")
