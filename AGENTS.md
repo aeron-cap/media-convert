@@ -83,6 +83,11 @@ that cost time to learn.
   requests from the app itself and images from `ytimg.com` only. A new outside
   resource (font, script, image host) needs the policy changed, or it fails
   silently in the browser. `/docs` is exempt.
+- **The page never uses a path that starts with `/`.** It may be served under
+  a sub-path by a reverse proxy, where `/api/...` would reach another service.
+  Requests and links go through `appUrl()` in `api.ts`, and Vite builds with
+  `base: "./"`. The server's `download_url` and `zip_url` still start with
+  `/`; pass them through `appUrl()` before using them in the page.
 - **Browsers allow about six connections per site.** Only three running jobs
   are followed live (`MAX_LIVE` in `app.tsx`); more would starve every other
   request on the page.

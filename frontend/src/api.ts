@@ -77,13 +77,24 @@ export interface Job {
   expires_at: string | null;
 }
 
+/**
+ * Turn a server path such as "/api/jobs" into one relative to the page.
+ *
+ * The app may be served from a sub-path behind a reverse proxy (for example
+ * https://homelab/convert/), where a path starting with "/" would skip the
+ * sub-path and reach a different service. Relative paths follow the page.
+ */
+export function appUrl(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
 /** An error whose message is meant to be shown to the user as is. */
 export class ApiError extends Error {}
 
 async function request<T>(path: string, body?: unknown, method?: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(appUrl(path), {
       method: method ?? (body === undefined ? "GET" : "POST"),
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -186,7 +197,7 @@ export function isActive(job: Job): boolean {
  * itself when the job ends. Returns a function that stops it early.
  */
 export function watchJob(jobId: string, onUpdate: (job: Job) => void): () => void {
-  const source = new EventSource(`/api/jobs/${jobId}/events`);
+  const source = new EventSource(appUrl(`/api/jobs/${jobId}/events`));
   source.onmessage = (event) => {
     const job = JSON.parse(event.data) as Job;
     onUpdate(job);

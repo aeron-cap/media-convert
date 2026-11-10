@@ -1,4 +1,4 @@
-import { isActive, type Batch, type FormatInfo, type Job } from "../api";
+import { appUrl, isActive, type Batch, type FormatInfo, type Job } from "../api";
 import { formatQuality } from "../format";
 import { JobItem } from "./JobItem";
 import { QualitySelect } from "./QualitySelect";
@@ -90,7 +90,7 @@ export function BatchGroup({
             />
           )}
           {batch && done > 0 && (
-            <a class="button primary" href={batch.zip_url} download>
+            <a class="button primary" href={appUrl(batch.zip_url)} download>
               {done === jobs.length ? "Download all" : `Download ${done}`} (zip)
             </a>
           )}

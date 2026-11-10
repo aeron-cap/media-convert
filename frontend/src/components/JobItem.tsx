@@ -1,4 +1,4 @@
-import { isActive, type FormatInfo, type Job } from "../api";
+import { appUrl, isActive, type FormatInfo, type Job } from "../api";
 import { formatDuration, formatExpiry, formatQuality, formatSize } from "../format";
 import { QualitySelect } from "./QualitySelect";
 
@@ -54,7 +54,7 @@ export function JobItem({
           />
         )}
         {job.status === "done" && job.download_url && (
-          <a class="button primary" href={job.download_url} download>
+          <a class="button primary" href={appUrl(job.download_url)} download>
             Download
           </a>
         )}

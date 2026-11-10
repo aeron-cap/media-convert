@@ -76,6 +76,30 @@ see the message often, try these in order:
    `cookies.txt` line in that file. YouTube can ban accounts used this way, so
    use a throwaway account, never your main one.
 
+### Behind a reverse proxy
+
+The app works at its own address or under a sub-path such as
+`http://homelab/convert/`, next to other services. For a sub-path, the proxy
+must strip the prefix. With nginx, where 8000 is the app's `PORT`:
+
+```nginx
+location = /convert {
+    return 301 /convert/;
+}
+
+location /convert/ {
+    proxy_pass http://127.0.0.1:8000/;   # the trailing slash strips /convert
+    proxy_buffering off;                 # live progress, and no disk buffering of downloads
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+Open it with the trailing slash (`/convert/`); the first rule adds it when
+someone leaves it off. To keep the app reachable only through the proxy,
+change the port line in `docker-compose.yml` to
+`"127.0.0.1:${PORT:-8000}:8000"`.
+
 ### Keeping it working
 
 YouTube changes often, and conversions start failing when the downloader falls
