@@ -78,10 +78,9 @@ class Worker:
                 converter.remove_files(self.settings.files_dir, job_id)
 
     def _convert(self, job_id: str) -> None:
-        job = self.db.get_job(job_id)
-        if job is None or job["status"] != "queued":
+        job = self.db.claim_job(job_id)
+        if job is None:
             return
-        self.db.update_job(job_id, status="running", stage="starting", started_at=now())
 
         last_write = 0.0
         last_stage = ""

@@ -56,6 +56,12 @@ class JobCreate(BaseModel):
     quality: str | None = Field(default=None, max_length=16)
 
 
+class QualityUpdate(BaseModel):
+    """A new quality for conversions that are still waiting to start."""
+
+    quality: str = Field(min_length=1, max_length=16)
+
+
 class Job(BaseModel):
     id: str
     url: str

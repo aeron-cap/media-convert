@@ -6,9 +6,9 @@ from fastapi.responses import StreamingResponse
 from .. import converter
 from ..config import get_settings
 from ..converter import ConversionError
-from ..models import Batch, BatchCreate, BatchCreated, Job
+from ..models import Batch, BatchCreate, BatchCreated, Job, QualityUpdate
 from ..zipstream import unique_names, zip_stream
-from .jobs import _check_room, _db, _remove, _worker
+from .jobs import _check_room, _db, _remove, _worker, new_quality
 
 router = APIRouter()
 
@@ -62,6 +62,27 @@ def create_batch(body: BatchCreate, request: Request) -> dict:
 @router.get("/batches", response_model=list[Batch])
 def list_batches(request: Request) -> list[Batch]:
     return [Batch.from_row(row) for row in _db(request).list_batches()]
+
+
+@router.patch("/batches/{batch_id}", response_model=BatchCreated)
+def update_batch(batch_id: str, body: QualityUpdate, request: Request) -> dict:
+    """Change the quality of the playlist's videos that are still waiting.
+
+    Videos that are running or finished keep the quality they started with.
+    """
+    batch = _get_or_404(request, batch_id)
+    quality = new_quality(batch["format"], body.quality)
+    db = _db(request)
+    if not db.set_batch_quality(batch_id, quality):
+        raise HTTPException(
+            status_code=409,
+            detail="Every video in this playlist has already started, so nothing was changed.",
+        )
+    retention = get_settings().retention_hours
+    return {
+        "batch": Batch.from_row(_get_or_404(request, batch_id)),
+        "jobs": [Job.from_row(job, retention) for job in db.batch_jobs(batch_id)],
+    }
 
 
 @router.delete("/batches/{batch_id}", status_code=204)

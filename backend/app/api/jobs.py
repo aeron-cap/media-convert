@@ -9,7 +9,15 @@ from .. import converter
 from ..config import get_settings
 from ..converter import ConversionError
 from ..db import UNFINISHED, Database
-from ..models import FormatInfo, Job, JobCreate, PlaylistInfo, ProbeRequest, VideoInfo
+from ..models import (
+    FormatInfo,
+    Job,
+    JobCreate,
+    PlaylistInfo,
+    ProbeRequest,
+    QualityUpdate,
+    VideoInfo,
+)
 from ..worker import Worker
 
 router = APIRouter()
@@ -118,6 +126,32 @@ def delete_job(job_id: str, request: Request) -> Response:
     _get_or_404(request, job_id)
     _remove(request, job_id)
     return Response(status_code=204)
+
+
+def new_quality(format: str, quality: str) -> str:
+    """Check a quality change for `format`; raises the HTTP error to send."""
+    if not converter.FORMATS[format]["qualities"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{converter.FORMATS[format]['label']} has no quality setting to change.",
+        )
+    try:
+        return converter.normalize_quality(format, quality)
+    except ConversionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.patch("/jobs/{job_id}", response_model=Job)
+def update_job(job_id: str, body: QualityUpdate, request: Request) -> Job:
+    """Change the quality of a job that is still waiting to start."""
+    row = _get_or_404(request, job_id)
+    quality = new_quality(row["format"], body.quality)
+    if not _db(request).set_queued_quality(job_id, quality):
+        raise HTTPException(
+            status_code=409,
+            detail="This conversion has already started, so its quality can't be changed.",
+        )
+    return _job(_get_or_404(request, job_id))
 
 
 @router.get("/jobs/{job_id}", response_model=Job)

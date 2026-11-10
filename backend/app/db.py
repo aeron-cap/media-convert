@@ -124,6 +124,39 @@ class Database:
                 f"UPDATE jobs SET {assignments} WHERE id = ?", (*fields.values(), job_id)
             )
 
+    def claim_job(self, job_id: str) -> dict[str, Any] | None:
+        """Move a queued job to running and return it; None if it isn't queued.
+
+        One statement, so a quality change made while the job waited is either
+        applied before the job starts or refused: never accepted and ignored.
+        """
+        with self._connect() as conn:
+            claimed = conn.execute(
+                "UPDATE jobs SET status = 'running', stage = 'starting', started_at = ? "
+                "WHERE id = ? AND status = 'queued'",
+                (now(), job_id),
+            ).rowcount
+        return self.get_job(job_id) if claimed else None
+
+    def set_queued_quality(self, job_id: str, quality: str | None) -> bool:
+        """Change the quality of a job that hasn't started; False if it has."""
+        with self._connect() as conn:
+            return conn.execute(
+                "UPDATE jobs SET quality = ? WHERE id = ? AND status = 'queued'",
+                (quality, job_id),
+            ).rowcount > 0
+
+    def set_batch_quality(self, batch_id: str, quality: str | None) -> int:
+        """Change the quality of a batch's waiting jobs; returns how many."""
+        with self._connect() as conn:
+            changed = conn.execute(
+                "UPDATE jobs SET quality = ? WHERE batch_id = ? AND status = 'queued'",
+                (quality, batch_id),
+            ).rowcount
+            if changed:
+                conn.execute("UPDATE batches SET quality = ? WHERE id = ?", (quality, batch_id))
+        return changed
+
     def count_unfinished(self) -> int:
         with self._connect() as conn:
             row = conn.execute(
