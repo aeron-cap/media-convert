@@ -51,8 +51,16 @@ h1 {
   color: var(--muted);
 }
 
-.section-title {
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin: 2rem 0 0.75rem;
+}
+
+.section-title {
+  margin: 0;
   font-size: 1rem;
 }
 
@@ -108,6 +116,20 @@ h1 {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
+}
+
+.button.quiet {
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.button.quiet:hover {
+  border-color: var(--border);
+  color: var(--text);
 }
 
 .button:disabled {
@@ -308,6 +330,6 @@ input:focus-visible {
   }
 
   .job .button {
-    width: 100%;
+    flex: 1;
   }
 }

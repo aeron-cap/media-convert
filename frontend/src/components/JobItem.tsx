@@ -1,13 +1,22 @@
 import { isActive, type FormatInfo, type Job } from "../api";
-import { formatDuration, formatQuality, formatSize } from "../format";
+import { formatDuration, formatExpiry, formatQuality, formatSize } from "../format";
 
-export function JobItem({ job, formats }: { job: Job; formats: FormatInfo[] }) {
+export function JobItem({
+  job,
+  formats,
+  onRemove,
+}: {
+  job: Job;
+  formats: FormatInfo[];
+  onRemove: (job: Job) => void;
+}) {
   const format = formats.find((f) => f.id === job.format);
   const details = [
     format?.label ?? job.format.toUpperCase(),
     format ? formatQuality(format.kind, job.quality) : "",
     formatDuration(job.duration),
     formatSize(job.filesize),
+    job.status === "done" ? formatExpiry(job.expires_at) : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -34,6 +43,14 @@ export function JobItem({ job, formats }: { job: Job; formats: FormatInfo[] }) {
           Download
         </a>
       )}
+      <button
+        type="button"
+        class="button quiet"
+        aria-label={`${isActive(job) ? "Cancel" : "Remove"} ${job.title ?? "this conversion"}`}
+        onClick={() => onRemove(job)}
+      >
+        {isActive(job) ? "Cancel" : "Remove"}
+      </button>
     </li>
   );
 }

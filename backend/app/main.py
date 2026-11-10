@@ -1,9 +1,11 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .api import router as api_router
+from .cleanup import cleanup_loop
 from .config import get_settings
 from .db import Database
 from .worker import Worker
@@ -20,9 +22,11 @@ async def lifespan(app: FastAPI):
     worker.start()
     app.state.db = db
     app.state.worker = worker
+    cleanup = asyncio.create_task(cleanup_loop(db, settings))
 
     yield
 
+    cleanup.cancel()
     worker.stop()
 
 

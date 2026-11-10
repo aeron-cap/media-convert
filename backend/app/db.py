@@ -109,3 +109,23 @@ class Database:
                 (error, now(), *UNFINISHED),
             )
             return cursor.rowcount
+
+    def delete_job(self, job_id: str) -> bool:
+        with self._connect() as conn:
+            return conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,)).rowcount > 0
+
+    def finished_jobs(self) -> list[dict[str, Any]]:
+        """Jobs that are done or failed."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE status NOT IN (?, ?)", UNFINISHED
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def finished_before(self, cutoff: str) -> list[dict[str, Any]]:
+        """Finished jobs whose `finished_at` is earlier than `cutoff` (ISO, UTC)."""
+        return [job for job in self.finished_jobs() if (job["finished_at"] or "") < cutoff]
+
+    def job_ids(self) -> set[str]:
+        with self._connect() as conn:
+            return {row["id"] for row in conn.execute("SELECT id FROM jobs")}

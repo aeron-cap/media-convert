@@ -39,16 +39,18 @@ export interface Job {
   started_at: string | null;
   finished_at: string | null;
   download_url: string | null;
+  /** When the job and its file are deleted automatically; null if never. */
+  expires_at: string | null;
 }
 
 /** An error whose message is meant to be shown to the user as is. */
 export class ApiError extends Error {}
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(path: string, body?: unknown, method?: string): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -58,6 +60,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   if (!response.ok) {
     throw new ApiError(await errorMessage(response));
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -85,6 +88,16 @@ export function createJob(url: string, format: Format, quality: string | null): 
 
 export function listJobs(): Promise<Job[]> {
   return request<Job[]>("/api/jobs");
+}
+
+/** Delete a job and its file; a queued or running job is cancelled. */
+export function deleteJob(jobId: string): Promise<void> {
+  return request<void>(`/api/jobs/${jobId}`, undefined, "DELETE");
+}
+
+/** Delete every finished job and its file. */
+export function clearFinishedJobs(): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>("/api/jobs", undefined, "DELETE");
 }
 
 export function isActive(job: Job): boolean {

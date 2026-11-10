@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -14,6 +15,10 @@ log = logging.getLogger(__name__)
 PROGRESS_INTERVAL = 0.5
 
 
+class JobCancelled(Exception):
+    """Raised inside a running conversion to stop it."""
+
+
 class Worker:
     """Runs conversion jobs on a small thread pool, recording state in SQLite."""
 
@@ -21,6 +26,9 @@ class Worker:
         self.db = db
         self.settings = settings
         self._executor: ThreadPoolExecutor | None = None
+        self._lock = threading.Lock()
+        self._running: set[str] = set()
+        self._cancelled: set[str] = set()
 
     def start(self) -> None:
         interrupted = self.db.fail_unfinished("Interrupted by a server restart.")
@@ -40,7 +48,36 @@ class Worker:
             raise RuntimeError("worker is not started")
         self._executor.submit(self._run, job_id)
 
+    def cancel(self, job_id: str) -> bool:
+        """Ask a running job to stop and discard its files.
+
+        Returns False when the job isn't running; the caller then owns the
+        clean-up. A queued job needs no cancelling: deleting its row is enough.
+        """
+        with self._lock:
+            if job_id not in self._running:
+                return False
+            self._cancelled.add(job_id)
+            return True
+
+    def _is_cancelled(self, job_id: str) -> bool:
+        with self._lock:
+            return job_id in self._cancelled
+
     def _run(self, job_id: str) -> None:
+        with self._lock:
+            self._running.add(job_id)
+        try:
+            self._convert(job_id)
+        finally:
+            with self._lock:
+                self._running.discard(job_id)
+                cancelled = job_id in self._cancelled
+                self._cancelled.discard(job_id)
+            if cancelled:
+                converter.remove_files(self.settings.files_dir, job_id)
+
+    def _convert(self, job_id: str) -> None:
         job = self.db.get_job(job_id)
         if job is None or job["status"] != "queued":
             return
@@ -50,6 +87,8 @@ class Worker:
         last_stage = ""
 
         def on_info(info: dict[str, Any]) -> None:
+            if self._is_cancelled(job_id):
+                raise JobCancelled
             limit = self.settings.max_duration_minutes
             if limit and (info["duration"] or 0) > limit * 60:
                 raise ConversionError(f"This video is longer than the {limit}-minute limit.")
@@ -63,6 +102,8 @@ class Worker:
 
         def on_progress(stage: str, fraction: float) -> None:
             nonlocal last_write, last_stage
+            if self._is_cancelled(job_id):
+                raise JobCancelled
             current = time.monotonic()
             if stage == last_stage and current - last_write < PROGRESS_INTERVAL:
                 return
@@ -79,9 +120,15 @@ class Worker:
                 on_info,
                 on_progress,
             )
+        except JobCancelled:
+            log.info("job %s cancelled", job_id)
         except ConversionError as error:
             self._fail(job_id, str(error))
         except Exception:
+            if self._is_cancelled(job_id):
+                # yt-dlp may wrap the cancellation in an error of its own.
+                log.info("job %s cancelled", job_id)
+                return
             log.exception("job %s failed unexpectedly", job_id)
             self._fail(job_id, "Something went wrong during the conversion.")
         else:

@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { isActive, listFormats, listJobs, watchJob, type FormatInfo, type Job } from "./api";
+import {
+  clearFinishedJobs,
+  deleteJob,
+  isActive,
+  listFormats,
+  listJobs,
+  watchJob,
+  type FormatInfo,
+  type Job,
+} from "./api";
 import { ConvertForm } from "./components/ConvertForm";
 import { JobItem } from "./components/JobItem";
+
+const REFRESH_MS = 60_000;
 
 export function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [formats, setFormats] = useState<FormatInfo[]>([]);
   const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Jobs currently being followed, by id, with the function that stops each.
   const watchers = useRef(new Map<string, () => void>());
 
@@ -36,11 +48,51 @@ export function App() {
         loadedJobs.forEach(follow);
       })
       .catch(() => setLoadError(true));
+    // Pick up changes made elsewhere, such as conversions that expired.
+    const refresh = setInterval(() => {
+      if (document.hidden) return;
+      listJobs()
+        .then((loaded) => {
+          setJobs(loaded);
+          loaded.forEach(follow);
+        })
+        .catch(() => {});
+    }, REFRESH_MS);
     return () => {
+      clearInterval(refresh);
       watchers.current.forEach((stop) => stop());
       watchers.current.clear();
     };
   }, []);
+
+  function forget(job: Job) {
+    watchers.current.get(job.id)?.();
+    watchers.current.delete(job.id);
+    setJobs((current) => current.filter((existing) => existing.id !== job.id));
+  }
+
+  async function remove(job: Job) {
+    setActionError(null);
+    try {
+      await deleteJob(job.id);
+      forget(job);
+    } catch {
+      // It may already be gone (expired or removed in another tab); reload to see.
+      setActionError("Couldn't remove that conversion. Reload the page and try again.");
+    }
+  }
+
+  async function clearFinished() {
+    const finished = jobs.filter((job) => !isActive(job));
+    if (!confirm(`Remove ${finished.length} finished conversion(s) and their files?`)) return;
+    setActionError(null);
+    try {
+      await clearFinishedJobs();
+      finished.forEach(forget);
+    } catch {
+      setActionError("Couldn't clear the finished conversions. Try again.");
+    }
+  }
 
   function onJobCreated(job: Job) {
     upsert(job);
@@ -64,10 +116,22 @@ export function App() {
 
       {jobs.length > 0 && (
         <section>
-          <h2 class="section-title">Conversions</h2>
+          <div class="section-head">
+            <h2 class="section-title">Conversions</h2>
+            {jobs.some((job) => !isActive(job)) && (
+              <button type="button" class="button quiet" onClick={clearFinished}>
+                Clear finished
+              </button>
+            )}
+          </div>
+          {actionError && (
+            <p class="error" role="alert">
+              {actionError}
+            </p>
+          )}
           <ul class="jobs">
             {jobs.map((job) => (
-              <JobItem key={job.id} job={job} formats={formats} />
+              <JobItem key={job.id} job={job} formats={formats} onRemove={remove} />
             ))}
           </ul>
         </section>

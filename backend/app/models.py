@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -54,8 +55,14 @@ class Job(BaseModel):
     started_at: str | None
     finished_at: str | None
     download_url: str | None
+    # When the job and its file are deleted automatically; null if never.
+    expires_at: str | None
 
     @classmethod
-    def from_row(cls, row: dict[str, Any]) -> "Job":
+    def from_row(cls, row: dict[str, Any], retention_hours: int) -> "Job":
         download_url = f"/api/jobs/{row['id']}/file" if row["status"] == "done" else None
-        return cls(**row, download_url=download_url)
+        expires_at = None
+        if row["finished_at"] and retention_hours > 0:
+            finished = datetime.fromisoformat(row["finished_at"])
+            expires_at = (finished + timedelta(hours=retention_hours)).isoformat(timespec="seconds")
+        return cls(**row, download_url=download_url, expires_at=expires_at)

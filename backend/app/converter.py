@@ -426,6 +426,11 @@ def _download_fraction(d: dict[str, Any], streams: list[tuple[str, int]]) -> flo
     return min(downloaded / total, 1.0) if total else 0.0
 
 
+def remove_files(out_dir: Path, job_id: str) -> None:
+    """Delete every file that belongs to `job_id`, finished or partial."""
+    _remove_leftovers(out_dir, job_id)
+
+
 def _remove_leftovers(out_dir: Path, job_id: str, keep: Path | None = None) -> None:
     for path in out_dir.glob(f"{job_id}.*"):
         if path != keep:

@@ -20,3 +20,12 @@ export function formatQuality(kind: "audio" | "video", quality: string | null): 
   if (kind === "audio") return `${quality} kbps`;
   return quality === "best" ? "Best quality" : `${quality}p`;
 }
+
+/** "Expires in 5 h", "Expires in 12 min"; empty when the job never expires. */
+export function formatExpiry(expiresAt: string | null, now: number = Date.now()): string {
+  if (expiresAt == null) return "";
+  const minutes = Math.round((new Date(expiresAt).getTime() - now) / 60000);
+  if (minutes <= 1) return "Expires soon";
+  if (minutes < 90) return `Expires in ${minutes} min`;
+  return `Expires in ${Math.round(minutes / 60)} h`;
+}

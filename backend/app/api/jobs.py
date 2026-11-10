@@ -1,7 +1,7 @@
 import asyncio
 from typing import AsyncIterator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -26,6 +26,19 @@ def _db(request: Request) -> Database:
 
 def _worker(request: Request) -> Worker:
     return request.app.state.worker
+
+
+def _job(row: dict) -> Job:
+    return Job.from_row(row, get_settings().retention_hours)
+
+
+def _remove(request: Request, job_id: str) -> None:
+    """Delete a job in any state, with its files."""
+    # A running job is told to stop and removes its own files when it does.
+    running = _worker(request).cancel(job_id)
+    _db(request).delete_job(job_id)
+    if not running:
+        converter.remove_files(get_settings().files_dir, job_id)
 
 
 def _get_or_404(request: Request, job_id: str) -> dict:
@@ -71,17 +84,34 @@ def create_job(body: JobCreate, request: Request) -> Job:
         raise HTTPException(status_code=422, detail=str(error)) from error
     row = _db(request).create_job(url, body.format, quality)
     _worker(request).submit(row["id"])
-    return Job.from_row(row)
+    return _job(row)
 
 
 @router.get("/jobs", response_model=list[Job])
 def list_jobs(request: Request) -> list[Job]:
-    return [Job.from_row(row) for row in _db(request).list_jobs()]
+    return [_job(row) for row in _db(request).list_jobs()]
+
+
+@router.delete("/jobs")
+def clear_finished_jobs(request: Request) -> dict:
+    """Delete every job that is done or failed, with its file."""
+    finished = _db(request).finished_jobs()
+    for row in finished:
+        _remove(request, row["id"])
+    return {"deleted": len(finished)}
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+def delete_job(job_id: str, request: Request) -> Response:
+    """Delete a job and its file. A queued or running job is cancelled."""
+    _get_or_404(request, job_id)
+    _remove(request, job_id)
+    return Response(status_code=204)
 
 
 @router.get("/jobs/{job_id}", response_model=Job)
 def get_job(job_id: str, request: Request) -> Job:
-    return Job.from_row(_get_or_404(request, job_id))
+    return _job(_get_or_404(request, job_id))
 
 
 @router.get("/jobs/{job_id}/events")
@@ -98,7 +128,7 @@ async def job_events(job_id: str, request: Request) -> StreamingResponse:
             row = await run_in_threadpool(db.get_job, job_id)
             if row is None:
                 return
-            payload = Job.from_row(row).model_dump_json()
+            payload = _job(row).model_dump_json()
             if payload != previous:
                 previous, idle = payload, 0.0
                 yield f"data: {payload}\n\n"
