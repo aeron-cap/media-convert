@@ -41,6 +41,16 @@ def _remove(request: Request, job_id: str) -> None:
         converter.remove_files(get_settings().files_dir, job_id)
 
 
+def _check_room(request: Request, adding: int = 1) -> None:
+    """Refuse new jobs when too many are already waiting or running."""
+    limit = get_settings().max_pending_jobs
+    if limit and _db(request).count_unfinished() + adding > limit:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many conversions are waiting already. Try again when some have finished.",
+        )
+
+
 def _get_or_404(request: Request, job_id: str) -> dict:
     row = _db(request).get_job(job_id)
     if row is None:
@@ -82,6 +92,7 @@ def create_job(body: JobCreate, request: Request) -> Job:
         quality = converter.normalize_quality(body.format, body.quality)
     except ConversionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    _check_room(request)
     row = _db(request).create_job(url, body.format, quality)
     _worker(request).submit(row["id"])
     return _job(row)

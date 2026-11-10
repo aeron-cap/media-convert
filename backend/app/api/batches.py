@@ -8,7 +8,7 @@ from ..config import get_settings
 from ..converter import ConversionError
 from ..models import Batch, BatchCreate, BatchCreated, Job
 from ..zipstream import unique_names, zip_stream
-from .jobs import _db, _remove, _worker
+from .jobs import _check_room, _db, _remove, _worker
 
 router = APIRouter()
 
@@ -33,6 +33,9 @@ def create_batch(body: BatchCreate, request: Request) -> dict:
         quality = converter.normalize_quality(body.format, body.quality)
     except ConversionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    if len({entry.video_id for entry in body.entries}) != len(body.entries):
+        raise HTTPException(status_code=422, detail="The same video was chosen more than once.")
+    _check_room(request, adding=len(body.entries))
 
     db = _db(request)
     batch = db.create_batch(url, body.title, body.format, quality)

@@ -124,6 +124,13 @@ class Database:
                 f"UPDATE jobs SET {assignments} WHERE id = ?", (*fields.values(), job_id)
             )
 
+    def count_unfinished(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status IN (?, ?)", UNFINISHED
+            ).fetchone()
+        return row[0]
+
     def fail_unfinished(self, error: str) -> int:
         """Mark jobs left queued or running (e.g. by a restart) as failed."""
         with self._connect() as conn:

@@ -27,7 +27,20 @@ YOUTUBE_HOSTS = {
     "youtu.be",
 }
 
-AUDIO_BITRATES = ["128", "192", "256", "320"]
+# Paths that lead to one video, on every host except youtu.be (where the
+# whole path is the video's id).
+VIDEO_PATH_PREFIXES = ("/shorts/", "/live/", "/embed/", "/v/")
+# yt-dlp extractors, by name. The two "truncated" ones only produce a clear
+# error for links that were cut off.
+ALLOWED_EXTRACTORS = (
+    "youtube",
+    "youtube:tab",
+    "youtube:playlist",
+    "youtube:truncated_id",
+    "youtube:truncated_url",
+)
+
+AUDIO_BITRATES =["128", "192", "256", "320"]
 DEFAULT_BITRATE = "192"
 # Video quality is a maximum height in pixels, or "best" for no limit.
 VIDEO_QUALITIES = ["best", "1080", "720", "480", "360"]
@@ -77,10 +90,47 @@ class ConversionError(Exception):
 
 def validate_url(url: str) -> str:
     url = url.strip()
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or (parsed.hostname or "").lower() not in YOUTUBE_HOSTS:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        parsed, port = None, None
+    if (
+        parsed is None
+        or parsed.scheme not in ("http", "https")
+        or (parsed.hostname or "").lower() not in YOUTUBE_HOSTS
+        # A real YouTube link never carries a login or a port; refusing them
+        # keeps look-alikes such as "youtube.com@elsewhere" out entirely.
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 80, 443)
+        or any(ord(char) < 0x21 or ord(char) == 0x7F for char in url)
+    ):
         raise ConversionError("Enter a YouTube link (youtube.com or youtu.be).")
+    if not _is_video_or_playlist(parsed):
+        # Channels, searches, feeds: some of these are endless lists.
+        raise ConversionError(
+            "That link isn't a video or a playlist. "
+            "Open the video or playlist on YouTube and copy its link."
+        )
     return url
+
+
+def _is_video_or_playlist(parsed: Any) -> bool:
+    path, query = parsed.path, parse_qs(parsed.query)
+    if (parsed.hostname or "").lower() == "youtu.be":
+        return len(path) > 1
+    if path.rstrip("/") == "/watch":
+        return bool(query.get("v"))
+    if path.rstrip("/") == "/playlist":
+        return bool(query.get("list"))
+    return any(path.startswith(prefix) and len(path) > len(prefix) for prefix in VIDEO_PATH_PREFIXES)
+
+
+def check_duration(duration: int | None, limit_minutes: int) -> None:
+    """Raise if a video of `duration` seconds is over the server's limit."""
+    if limit_minutes and (duration or 0) > limit_minutes * 60:
+        raise ConversionError(f"This video is longer than the {limit_minutes}-minute limit.")
 
 
 def video_url(video_id: str) -> str:
@@ -182,6 +232,9 @@ def _base_opts() -> dict[str, Any]:
         "noprogress": True,
         "noplaylist": True,
         "retries": 3,
+        # yt-dlp knows well over a thousand sites; only its code for YouTube
+        # videos and playlists may run (not searches, feeds or other sites).
+        "allowed_extractors": list(ALLOWED_EXTRACTORS),
     }
     if settings.yt_request_sleep > 0:
         opts["sleep_interval_requests"] = settings.yt_request_sleep
@@ -214,7 +267,8 @@ def _youtube_dl(extra: dict[str, Any] | None = None) -> Iterator[yt_dlp.YoutubeD
             shutil.copyfile(cookies, scratch)
             opts["cookiefile"] = str(scratch)
         elif cookies:
-            log.warning("YT_COOKIES_FILE is set but %s does not exist", cookies)
+            # Normal when no cookies file is mounted; `GET /api/health` shows it.
+            log.debug("YT_COOKIES_FILE is set but %s does not exist", cookies)
         with yt_dlp.YoutubeDL(opts) as ydl:
             yield ydl
     finally:
@@ -305,17 +359,99 @@ def _extract(
         time.sleep(delay)
 
 
+# What to tell the user for the errors yt-dlp reports most. yt-dlp's own text
+# is advice for its command line ("use --cookies"), not for this app. Each
+# entry is (phrases, message): the first entry with a phrase found in the
+# error, ignoring case, wins, so the more specific ones come first.
+_ERROR_MESSAGES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("confirm your age", "age-restricted", "age restricted", "inappropriate for some users"),
+        "This video is age-restricted, so YouTube only shows it to a signed-in account. "
+        "It can't be converted unless this server is set up with account cookies.",
+    ),
+    (
+        ("private video", "video is private"),
+        "This video is private. Only public and unlisted videos can be converted.",
+    ),
+    (
+        ("members-only", "members only", "channel's members", "join this channel"),
+        "This video is for channel members only and can't be converted.",
+    ),
+    (
+        ("requires payment",),
+        "This video has to be bought or rented and can't be converted.",
+    ),
+    (
+        ("not available in your country", "not made this video available", "geo-restricted", "geo restricted"),
+        "This video is blocked in the country this server is in.",
+    ),
+    (
+        ("premieres in", "live event will begin", "will begin in", "is_upcoming"),
+        "This video hasn't started yet. Try again once it has been published.",
+    ),
+    (
+        ("playlist does not exist", "playlist is private", "playlist type is unviewable"),
+        "This playlist is private or doesn't exist.",
+    ),
+    (
+        ("copyright",),
+        "This video is blocked on YouTube because of a copyright claim.",
+    ),
+    (
+        ("removed by the uploader", "has been removed", "has been terminated", "no longer available"),
+        "This video has been removed from YouTube.",
+    ),
+    (
+        ("incomplete youtube id", "unsupported url", "is not a valid url"),
+        "That link doesn't point to a YouTube video or playlist. Copy the full link and try again.",
+    ),
+    (
+        ("http error 429", "too many requests"),
+        "YouTube is limiting requests from this server. Wait a few minutes and try again.",
+    ),
+    (
+        ("requested format is not available",),
+        "YouTube doesn't offer this video in a form that can be converted to the chosen format.",
+    ),
+    (
+        ("name resolution", "getaddrinfo", "timed out", "connection refused", "connection reset", "network is unreachable", "unable to download webpage", "unable to connect"),
+        "This server couldn't reach YouTube. Check its internet connection and try again.",
+    ),
+    (
+        ("no space left on device",),
+        "The server ran out of disk space. Remove old conversions and try again.",
+    ),
+    (
+        ("postprocessing", "ffmpeg", "ffprobe"),
+        "The download worked but converting the file failed. Try another format or quality.",
+    ),
+    (
+        ("unavailable", "not available"),
+        "This video is unavailable on YouTube.",
+    ),
+)
+# Longest text of an unrecognised error passed through to the user.
+MAX_ERROR_LENGTH = 300
+
+
 def _friendly(error: DownloadError) -> ConversionError:
     message = re.sub(r"\x1b\[[0-9;]*m", "", str(error))
     if _is_bot_check(message):
-        # yt-dlp's own text is advice for its command line, not for this app.
         return ConversionError(
             "YouTube asked this server to prove it isn't a bot. "
             "This is usually temporary; wait a minute and try again."
         )
+    lowered = message.lower().replace("’", "'")
+    for phrases, text in _ERROR_MESSAGES:
+        if any(phrase in lowered for phrase in phrases):
+            log.info("yt-dlp error shown as %r: %s", text, message)
+            return ConversionError(text)
     message = re.sub(r"^ERROR:\s*", "", message)
     message = re.sub(r"^\[[^\]]+\]\s*[\w-]+:\s*", "", message)
-    return ConversionError(message.strip() or "The video could not be fetched.")
+    message = " ".join(message.split())
+    if len(message) > MAX_ERROR_LENGTH:
+        message = message[: MAX_ERROR_LENGTH - 1].rstrip() + "…"
+    return ConversionError(message or "The video could not be fetched.")
 
 
 def _max_height(info: dict[str, Any]) -> int | None:
@@ -329,7 +465,11 @@ def _max_height(info: dict[str, Any]) -> int | None:
 
 def _summary(info: dict[str, Any]) -> dict[str, Any]:
     if info.get("_type") == "playlist":
-        raise ConversionError("Playlists aren't supported yet. Use a link to a single video.")
+        # Channels, searches and the like; real playlists are handled by probe().
+        raise ConversionError(
+            "That link is a channel or a list, not a video. "
+            "Use a link to a single video or to a playlist (youtube.com/playlist?list=…)."
+        )
     if info.get("is_live"):
         raise ConversionError("Live streams can't be converted while they are live.")
     return {
@@ -374,7 +514,7 @@ def probe(url: str) -> dict[str, Any]:
     url = validate_url(url)
     cached = _info_cache.take(url)
     if cached is not None:
-        return cached
+        return _within_limits(cached)
     try:
         if is_playlist_url(url):
             # List the playlist's videos without fetching each one.
@@ -390,7 +530,14 @@ def probe(url: str) -> dict[str, Any]:
     except DownloadError as error:
         raise _friendly(error) from error
     _info_cache.put(url, summary)
-    return copy.deepcopy(summary)
+    return _within_limits(copy.deepcopy(summary))
+
+
+def _within_limits(summary: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a video that is too long up front, not after the user starts it."""
+    if summary["kind"] == "video":
+        check_duration(summary["duration"], get_settings().max_duration_minutes)
+    return summary
 
 
 def convert(

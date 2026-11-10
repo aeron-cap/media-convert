@@ -145,4 +145,6 @@ def test_bot_check_error_gets_a_plain_message():
     message = str(_friendly(DownloadError(raw)))
     assert "try again" in message
     assert "--cookies" not in message
-    assert str(_friendly(DownloadError("ERROR: [youtube] abc: Video unavailable"))) == "Video unavailable"
+    assert str(_friendly(DownloadError("ERROR: [youtube] abc: Video unavailable"))) == (
+        "This video is unavailable on YouTube."
+    )

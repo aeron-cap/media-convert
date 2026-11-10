@@ -89,9 +89,7 @@ class Worker:
         def on_info(info: dict[str, Any]) -> None:
             if self._is_cancelled(job_id):
                 raise JobCancelled
-            limit = self.settings.max_duration_minutes
-            if limit and (info["duration"] or 0) > limit * 60:
-                raise ConversionError(f"This video is longer than the {limit}-minute limit.")
+            converter.check_duration(info["duration"], self.settings.max_duration_minutes)
             self.db.update_job(
                 job_id,
                 video_id=info["video_id"],

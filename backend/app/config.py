@@ -26,6 +26,8 @@ class Settings:
     retention_hours: int
     max_duration_minutes: int
     max_playlist_items: int
+    # Most conversions that may be waiting or running at once; more are refused.
+    max_pending_jobs: int
 
     # --- Staying under YouTube's bot checks ---
     # Minimum seconds between two metadata fetches, across all jobs.
@@ -60,6 +62,7 @@ def get_settings() -> Settings:
         retention_hours=_int("RETENTION_HOURS", 24),
         max_duration_minutes=_int("MAX_DURATION_MINUTES", 180),
         max_playlist_items=_int("MAX_PLAYLIST_ITEMS", 50),
+        max_pending_jobs=_int("MAX_PENDING_JOBS", 100),
         yt_min_interval=_float("YT_MIN_INTERVAL_SECONDS", 2.0),
         yt_request_sleep=_float("YT_REQUEST_SLEEP_SECONDS", 0.5),
         yt_retries=_int("YT_RETRIES", 2),
