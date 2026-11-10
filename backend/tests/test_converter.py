@@ -97,8 +97,51 @@ def test_audio_bitrate_is_passed_to_the_encoder():
 
 def test_video_quality_caps_the_resolution():
     assert format_options("mp4", "720")["format_sort"][0] == "res:720"
-    assert format_options("mp4", "best")["format_sort"] == ["vcodec:h264", "acodec:m4a"]
     assert format_options("mkv", "best")["format_sort"] == []
+
+
+@pytest.mark.parametrize("format", ["mp4", "webm"])
+@pytest.mark.parametrize("quality", ["best", "1080", "360"])
+def test_resolution_outranks_the_codec_preference(format, quality):
+    # yt-dlp ranks by these fields in order. A codec listed before the
+    # resolution makes "best" settle for a low-resolution stream in that codec.
+    sort = format_options(format, quality)["format_sort"]
+    fields = [entry.split(":")[0] for entry in sort]
+    assert fields[:2] == ["res", "fps"]
+    assert fields.index("res") < fields.index("vcodec") < fields.index("acodec")
+    assert sort[0] == ("res" if quality == "best" else f"res:{quality}")
+
+
+def test_best_mp4_picks_the_highest_resolution_stream():
+    """The real selection, run by yt-dlp on a made-up list of streams."""
+    from app.converter import _youtube_dl
+
+    def stream(format_id, height, vcodec, acodec="none", ext="mp4"):
+        video = vcodec != "none"
+        return {
+            "format_id": format_id, "url": f"https://example.test/{format_id}", "ext": ext,
+            "protocol": "https", "vcodec": vcodec, "acodec": acodec,
+            "height": height if video else None, "width": height * 16 // 9 if video else None,
+            "fps": 30 if video else None, "tbr": height or 128,
+        }
+
+    def chosen(format, quality, formats):
+        info = {"id": "abc", "title": "t", "extractor": "youtube", "formats": formats}
+        with _youtube_dl({**format_options(format, quality), "simulate": True}) as ydl:
+            result = ydl.process_video_result(info, download=False)
+        return [part["format_id"] for part in result.get("requested_formats") or [result]]
+
+    combined = stream("18", 360, "avc1.42001E", "mp4a.40.2")
+    audio = [stream("140", 0, "none", "mp4a.40.2", "m4a"), stream("251", 0, "none", "opus", "webm")]
+    h264 = [stream("136", 720, "avc1.4d401f"), stream("137", 1080, "avc1.640028")]
+    vp9 = [stream("248", 1080, "vp9", ext="webm"), stream("313", 2160, "vp9", ext="webm")]
+
+    # 4K exists only as VP9: take it, not the best H.264 and not the 360p file.
+    assert chosen("mp4", "best", [combined, *audio, *h264, *vp9]) == ["313", "140"]
+    # At a resolution both codecs offer, H.264 wins for MP4 and VP9 for WEBM.
+    assert chosen("mp4", "1080", [combined, *audio, *h264, *vp9]) == ["137", "140"]
+    assert chosen("webm", "1080", [combined, *audio, *h264, *vp9]) == ["248", "251"]
+    assert chosen("mp4", "best", [combined, *audio, *h264]) == ["137", "140"]
 
 
 def test_normalize_quality():

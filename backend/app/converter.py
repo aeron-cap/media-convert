@@ -189,15 +189,19 @@ def format_options(format: str, quality: str | None) -> dict[str, Any]:
             extract["preferredquality"] = quality
         return {"format": "bestaudio/best", "postprocessors": [extract]}
 
-    # Video. Resolution always ranks first; codecs only break ties, so each
-    # container gets streams it can hold without re-encoding where they exist.
+    # Video. yt-dlp ranks by the listed fields in order, ahead of its own
+    # defaults, so resolution and frame rate must be named before any codec:
+    # with a codec first, "best" MP4 once chose a 360p H.264 stream over 4K.
+    # Codecs then only break ties, so each container gets streams it can hold
+    # without re-encoding where they exist.
     sort = [] if quality == "best" else [f"res:{quality}"]
+    ranked = [*(sort or ["res"]), "fps"]
     if format == "mp4":
         # H.264 + AAC plays everywhere. Other codecs (above 1080p) are still
         # copied as they are rather than re-encoded.
         return {
             "format": "bv*+ba/b",
-            "format_sort": [*sort, "vcodec:h264", "acodec:m4a"],
+            "format_sort": [*ranked, "vcodec:h264", "acodec:m4a"],
             "merge_output_format": "mp4",
             "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
         }
@@ -206,7 +210,7 @@ def format_options(format: str, quality: str | None) -> dict[str, Any]:
         # re-encoded by the convertor, which does nothing for a WEBM input.
         return {
             "format": "bv*+ba/b",
-            "format_sort": [*sort, "vcodec:vp9", "acodec:opus"],
+            "format_sort": [*ranked, "vcodec:vp9", "acodec:opus"],
             "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "webm"}],
         }
     # MKV holds any codec, so take the best streams as they are.
