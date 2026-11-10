@@ -76,20 +76,21 @@ export function useFormatChoice(formats: FormatInfo[], maxHeight: number | null)
       ))}
 
       {quality !== null && (
-        <div class="quality">
-          <label for="quality">Quality</label>
-          <select
-            id="quality"
-            value={quality}
-            onChange={(event) => setPicked({ ...picked, [format.id]: event.currentTarget.value })}
-          >
-            {qualities.map((q) => (
-              <option value={q} key={q}>
-                {qualityLabel(format, q, maxHeight)}
-              </option>
-            ))}
-          </select>
-        </div>
+        <fieldset class="formats">
+          <legend>Quality</legend>
+          {qualities.map((q) => (
+            <label class="format" key={q}>
+              <input
+                type="radio"
+                name="quality"
+                value={q}
+                checked={quality === q}
+                onChange={() => setPicked({ ...picked, [format.id]: q })}
+              />
+              <span>{qualityLabel(format, q, maxHeight)}</span>
+            </label>
+          ))}
+        </fieldset>
       )}
 
       {format.note && <p class="meta">{format.note}</p>}

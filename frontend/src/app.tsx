@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import {
+  ApiError,
   clearFinishedJobs,
   deleteBatch,
   deleteJob,
@@ -8,6 +9,8 @@ import {
   listBatches,
   listFormats,
   listJobs,
+  updateBatchQuality,
+  updateJobQuality,
   watchJob,
   type Batch,
   type FormatInfo,
@@ -132,6 +135,33 @@ export function App() {
     }
   }
 
+  async function changeJobQuality(job: Job, quality: string) {
+    setActionError(null);
+    try {
+      upsert(await updateJobQuality(job.id, quality));
+    } catch (cause) {
+      // Most likely it started in the meantime; show the server's reason.
+      setActionError(cause instanceof ApiError ? cause.message : "Couldn't change the quality.");
+      reload().catch(() => {});
+    }
+  }
+
+  async function changeBatchQuality(batchId: string, quality: string) {
+    setActionError(null);
+    try {
+      const updated = await updateBatchQuality(batchId, quality);
+      setBatches((current) => current.map((b) => (b.id === batchId ? updated.batch : b)));
+      const fresh = new Map(updated.jobs.map((job) => [job.id, job]));
+      // Jobs followed live are already newer than this answer; keep those.
+      setJobs((current) =>
+        current.map((job) => (watchers.current.has(job.id) ? job : (fresh.get(job.id) ?? job))),
+      );
+    } catch (cause) {
+      setActionError(cause instanceof ApiError ? cause.message : "Couldn't change the quality.");
+      reload().catch(() => {});
+    }
+  }
+
   async function clearFinished() {
     const finished = jobs.filter((job) => !isActive(job));
     if (!confirm(`Remove ${finished.length} finished conversion(s) and their files?`)) return;
@@ -157,40 +187,63 @@ export function App() {
     }
   }
 
+  const running = jobs.filter((job) => job.status === "running").length;
+  const waiting = jobs.filter((job) => job.status === "queued").length;
+  const done = jobs.filter((job) => job.status === "done").length;
+  const counts = [
+    running > 0 ? `${running} running` : "",
+    waiting > 0 ? `${waiting} waiting` : "",
+    done > 0 ? `${done} done` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   return (
     <main class="page">
-      <header>
+      <header class="masthead">
         <h1>Media Converter</h1>
-        <p class="lead">Convert YouTube videos and playlists to audio and video files.</p>
+        <p class="lead">YouTube videos and playlists to audio and video files.</p>
       </header>
 
-      <ConvertForm formats={formats} onJobCreated={onJobCreated} onBatchCreated={onBatchCreated} />
+      <div class="workbench">
+        <ConvertForm formats={formats} onJobCreated={onJobCreated} onBatchCreated={onBatchCreated} />
 
-      {loadError && (
-        <p class="error" role="alert">
-          Can't reach the server. Check that it's running, then reload.
-        </p>
-      )}
-
-      {jobs.length > 0 && (
-        <section>
-          <div class="section-head">
-            <h2 class="section-title">Conversions</h2>
+        <section class="pane queue" aria-labelledby="queue-title">
+          <div class="pane-head">
+            <h2 class="pane-title" id="queue-title">
+              Queue{counts && <span class="pane-count"> · {counts}</span>}
+            </h2>
             {jobs.some((job) => !isActive(job)) && (
               <button type="button" class="button quiet" onClick={clearFinished}>
                 Clear finished
               </button>
             )}
           </div>
+          {loadError && (
+            <p class="error" role="alert">
+              Can't reach the server. Check that it's running, then reload.
+            </p>
+          )}
           {actionError && (
             <p class="error" role="alert">
               {actionError}
             </p>
           )}
+          {jobs.length === 0 && !loadError && (
+            <p class="empty">
+              Conversions appear here. Paste a link on the left to start the first one.
+            </p>
+          )}
           <ul class="jobs">
             {groups.map((group) =>
               "job" in group ? (
-                <JobItem key={group.job.id} job={group.job} formats={formats} onRemove={removeJob} />
+                <JobItem
+                  key={group.job.id}
+                  job={group.job}
+                  formats={formats}
+                  onRemove={removeJob}
+                  onQualityChange={changeJobQuality}
+                />
               ) : (
                 <BatchGroup
                   key={group.batchId}
@@ -199,12 +252,14 @@ export function App() {
                   formats={formats}
                   onRemoveJob={removeJob}
                   onRemoveBatch={removeBatch}
+                  onJobQualityChange={changeJobQuality}
+                  onBatchQualityChange={changeBatchQuality}
                 />
               ),
             )}
           </ul>
         </section>
-      )}
+      </div>
     </main>
   );
 }

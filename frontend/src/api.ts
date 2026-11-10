@@ -143,6 +143,19 @@ export function listJobs(): Promise<Job[]> {
   return request<Job[]>("/api/jobs");
 }
 
+/** Change the quality of a job that is still waiting to start. */
+export function updateJobQuality(jobId: string, quality: string): Promise<Job> {
+  return request<Job>(`/api/jobs/${jobId}`, { quality }, "PATCH");
+}
+
+/** Change the quality of a playlist's videos that are still waiting. */
+export function updateBatchQuality(
+  batchId: string,
+  quality: string,
+): Promise<{ batch: Batch; jobs: Job[] }> {
+  return request<{ batch: Batch; jobs: Job[] }>(`/api/batches/${batchId}`, { quality }, "PATCH");
+}
+
 /** Delete a job and its file; a queued or running job is cancelled. */
 export function deleteJob(jobId: string): Promise<void> {
   return request<void>(`/api/jobs/${jobId}`, undefined, "DELETE");

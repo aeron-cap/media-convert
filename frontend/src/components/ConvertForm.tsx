@@ -68,7 +68,12 @@ export function ConvertForm({
   }
 
   return (
-    <section class="card">
+    <section class="pane" aria-labelledby="convert-title">
+      <div class="pane-head">
+        <h2 class="pane-title" id="convert-title">
+          Convert
+        </h2>
+      </div>
       <form class="url-form" onSubmit={find}>
         <label class="visually-hidden" for="url">
           YouTube video or playlist link
@@ -91,6 +96,12 @@ export function ConvertForm({
       {error && (
         <p class="error" role="alert">
           {error}
+        </p>
+      )}
+
+      {!found && !error && (
+        <p class="empty">
+          Works with links to a video (youtube.com/watch, youtu.be, Shorts) or to a playlist.
         </p>
       )}
 
