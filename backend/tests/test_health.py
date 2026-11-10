@@ -5,3 +5,4 @@ def test_health_reports_ok(client):
     body = response.json()
     assert body["status"] == "ok"
     assert isinstance(body["ffmpeg"], bool)
+    assert body["youtube"] == {"cookies": False, "proxy": False, "pot_provider": False}

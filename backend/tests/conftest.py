@@ -13,6 +13,8 @@ def client(tmp_path, monkeypatch):
     """An app with its own empty data directory and no frontend."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("STATIC_DIR", str(tmp_path / "no-static"))
+    for name in ("YT_COOKIES_FILE", "YT_PROXY", "YT_POT_PROVIDER_URL"):
+        monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()
     with TestClient(create_app()) as test_client:
         yield test_client

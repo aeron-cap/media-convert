@@ -50,7 +50,9 @@ function Progress({ job }: { job: Job }) {
         ? `Downloading… ${percent}%`
         : job.stage === "converting"
           ? "Converting…"
-          : "Starting…";
+          : job.stage === "retrying"
+            ? "YouTube is busy, trying again…"
+            : "Starting…";
 
   return (
     <div class="progress">

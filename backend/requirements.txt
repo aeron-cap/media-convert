@@ -3,3 +3,6 @@ uvicorn[standard]>=0.30,<1
 # YouTube changes often. To pick up the newest yt-dlp, rebuild the image
 # with `docker compose build --no-cache`.
 yt-dlp[default]>=2026.10.26
+# yt-dlp plugin that fetches PO tokens from the optional pot-provider
+# container. Keep this version equal to that image's tag in docker-compose.yml.
+bgutil-ytdlp-pot-provider==2.0.2

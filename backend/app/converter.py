@@ -1,12 +1,23 @@
 """Fetching from YouTube (yt-dlp) and converting (ffmpeg, driven by yt-dlp)."""
 
+import copy
+import logging
 import re
+import shutil
+import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 from urllib.parse import urlparse
 
 import yt_dlp
 from yt_dlp.utils import DownloadError
+
+from .config import get_settings
+
+log = logging.getLogger(__name__)
 
 YOUTUBE_HOSTS = {
     "youtube.com",
@@ -46,6 +57,13 @@ FORMATS: dict[str, dict[str, Any]] = {
     },
     "mkv": {"label": "MKV", "kind": "video", "qualities": VIDEO_QUALITIES},
 }
+
+# How long a video's details are remembered, so looking the same link up
+# again doesn't ask YouTube again.
+INFO_CACHE_SECONDS = 600
+INFO_CACHE_SIZE = 64
+# Seconds to wait before each retry after a bot check; the last one repeats.
+RETRY_DELAYS = (4, 10, 20)
 
 # (stage, fraction 0..1) -> None
 ProgressCallback = Callable[[str, float], None]
@@ -142,18 +160,139 @@ def safe_filename(title: str | None, fallback: str) -> str:
 
 
 def _base_opts() -> dict[str, Any]:
-    return {
+    settings = get_settings()
+    opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "noplaylist": True,
         "retries": 3,
     }
+    if settings.yt_request_sleep > 0:
+        opts["sleep_interval_requests"] = settings.yt_request_sleep
+    if settings.yt_proxy:
+        opts["proxy"] = settings.yt_proxy
+    if settings.yt_pot_provider_url:
+        opts["extractor_args"] = {
+            # Read by the bgutil-ytdlp-pot-provider plugin.
+            "youtubepot-bgutilhttp": {"base_url": [settings.yt_pot_provider_url]},
+            # yt-dlp's default clients don't ask for a PO token, so the provider
+            # would sit unused; the mweb client is the one that uses it.
+            "youtube": {"player_client": ["default", "mweb"]},
+        }
+    return opts
+
+
+@contextmanager
+def _youtube_dl(extra: dict[str, Any] | None = None) -> Iterator[yt_dlp.YoutubeDL]:
+    """A YoutubeDL with the app's settings applied."""
+    opts = {**_base_opts(), **(extra or {})}
+    cookies = get_settings().yt_cookies_file
+    scratch: Path | None = None
+    try:
+        if cookies and cookies.is_file():
+            # yt-dlp writes cookies back when it closes, so give it a private
+            # copy: the original may be mounted read-only or used concurrently.
+            handle = tempfile.NamedTemporaryFile(prefix="cookies-", suffix=".txt", delete=False)
+            handle.close()
+            scratch = Path(handle.name)
+            shutil.copyfile(cookies, scratch)
+            opts["cookiefile"] = str(scratch)
+        elif cookies:
+            log.warning("YT_COOKIES_FILE is set but %s does not exist", cookies)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            yield ydl
+    finally:
+        if scratch:
+            scratch.unlink(missing_ok=True)
+
+
+class _Throttle:
+    """Spaces calls out so that they start at least `interval` seconds apart."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def wait(self, interval: float) -> None:
+        if interval <= 0:
+            return
+        with self._lock:
+            current = time.monotonic()
+            delay = max(self._next - current, 0.0)
+            self._next = current + delay + interval
+        if delay:
+            time.sleep(delay)
+
+
+class _InfoCache:
+    """Recently fetched video details (what probe() returns), by link.
+
+    Only the details are kept, never yt-dlp's stream links: YouTube rejects
+    those with a 403 when a different yt-dlp session tries to download them,
+    so every conversion has to fetch its own.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    def put(self, url: str, info: dict[str, Any]) -> None:
+        with self._lock:
+            self._entries.pop(url, None)
+            self._entries[url] = (time.monotonic(), info)
+            while len(self._entries) > INFO_CACHE_SIZE:
+                self._entries.pop(next(iter(self._entries)))
+
+    def take(self, url: str) -> dict[str, Any] | None:
+        """Return a private copy of the metadata for `url`, if still fresh."""
+        with self._lock:
+            entry = self._entries.get(url)
+            if entry is None:
+                return None
+            stored_at, info = entry
+            if time.monotonic() - stored_at > INFO_CACHE_SECONDS:
+                del self._entries[url]
+                return None
+        return copy.deepcopy(info)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+_throttle = _Throttle()
+_info_cache = _InfoCache()
+
+
+def _is_bot_check(message: str) -> bool:
+    return "confirm you" in message and "not a bot" in message
+
+
+def _extract(
+    ydl: yt_dlp.YoutubeDL, url: str, on_retry: Callable[[int], None] | None = None
+) -> dict[str, Any]:
+    """Fetch metadata for `url`, paced, retrying when YouTube's bot check hits."""
+    settings = get_settings()
+    attempt = 0
+    while True:
+        _throttle.wait(settings.yt_min_interval)
+        try:
+            return ydl.extract_info(url, download=False)
+        except DownloadError as error:
+            if not _is_bot_check(str(error)) or attempt >= settings.yt_retries:
+                raise
+        delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+        attempt += 1
+        log.warning("YouTube bot check; retry %d of %d in %ds", attempt, settings.yt_retries, delay)
+        if on_retry:
+            on_retry(attempt)
+        time.sleep(delay)
 
 
 def _friendly(error: DownloadError) -> ConversionError:
     message = re.sub(r"\x1b\[[0-9;]*m", "", str(error))
-    if "confirm you" in message and "not a bot" in message:
+    if _is_bot_check(message):
         # yt-dlp's own text is advice for its command line, not for this app.
         return ConversionError(
             "YouTube asked this server to prove it isn't a bot. "
@@ -191,12 +330,16 @@ def _summary(info: dict[str, Any]) -> dict[str, Any]:
 def probe(url: str) -> dict[str, Any]:
     """Return metadata for a single video without downloading it."""
     url = validate_url(url)
+    cached = _info_cache.take(url)
+    if cached is not None:
+        return cached
     try:
-        with yt_dlp.YoutubeDL(_base_opts()) as ydl:
-            info = ydl.extract_info(url, download=False)
+        with _youtube_dl() as ydl:
+            summary = _summary(_extract(ydl, url))
     except DownloadError as error:
         raise _friendly(error) from error
-    return _summary(info)
+    _info_cache.put(url, summary)
+    return copy.deepcopy(summary)
 
 
 def convert(
@@ -228,7 +371,6 @@ def convert(
             on_progress("converting", 1.0)
 
     opts = {
-        **_base_opts(),
         **format_opts,
         "outtmpl": str(out_dir / f"{job_id}.%(ext)s"),
         "progress_hooks": [download_hook],
@@ -236,9 +378,11 @@ def convert(
     }
 
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            on_info(_summary(info))
+        with _youtube_dl(opts) as ydl:
+            info = _extract(ydl, url, on_retry=lambda attempt: on_progress("retrying", 0.0))
+            summary = _summary(info)
+            _info_cache.put(url, summary)
+            on_info(copy.deepcopy(summary))
             streams.extend(_stream_sizes(info))
             ydl.process_ie_result(info, download=True)
     except DownloadError as error:
