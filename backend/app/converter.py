@@ -118,10 +118,14 @@ def convert(
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"{job_id}.{spec['ext']}"
 
+    # (format id, size in bytes) of each stream to download, filled in once
+    # the video's metadata is known. Video and audio usually come separately.
+    streams: list[tuple[str, int]] = []
+
     def download_hook(d: dict[str, Any]) -> None:
         if d.get("status") != "downloading":
             return
-        on_progress("downloading", _download_fraction(d))
+        on_progress("downloading", _download_fraction(d, streams))
 
     def postprocess_hook(d: dict[str, Any]) -> None:
         if d.get("status") == "started":
@@ -139,6 +143,7 @@ def convert(
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             on_info(_summary(info))
+            streams.extend(_stream_sizes(info))
             ydl.process_ie_result(info, download=True)
     except DownloadError as error:
         _remove_leftovers(out_dir, job_id)
@@ -154,24 +159,30 @@ def convert(
     return target
 
 
-def _download_fraction(d: dict[str, Any]) -> float:
-    """Overall download progress, across the separate video and audio streams."""
-    downloaded = d.get("downloaded_bytes") or 0
-    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-    info = d.get("info_dict") or {}
+def _stream_sizes(info: dict[str, Any]) -> list[tuple[str, int]]:
+    """Sizes of the separate streams yt-dlp will download, if all are known."""
     parts = info.get("requested_formats") or []
     sizes = [p.get("filesize") or p.get("filesize_approx") for p in parts]
+    if len(parts) < 2 or not all(sizes):
+        return []
+    return [(str(p.get("format_id")), int(size)) for p, size in zip(parts, sizes)]
 
-    if len(parts) > 1 and all(sizes):
+
+def _download_fraction(d: dict[str, Any], streams: list[tuple[str, int]]) -> float:
+    """Overall download progress, across the separate video and audio streams."""
+    downloaded = d.get("downloaded_bytes") or 0
+    current = str((d.get("info_dict") or {}).get("format_id"))
+
+    if any(format_id == current for format_id, _ in streams):
         # Streams download one after another; add up the ones already finished.
-        current = info.get("format_id")
         done = 0
-        for part, size in zip(parts, sizes):
-            if part.get("format_id") == current:
+        for format_id, size in streams:
+            if format_id == current:
                 break
             done += size
-        return min((done + downloaded) / sum(sizes), 1.0)
+        return min((done + downloaded) / sum(size for _, size in streams), 1.0)
 
+    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
     return min(downloaded / total, 1.0) if total else 0.0
 
 

@@ -1,3 +1,5 @@
+import json
+
 from app import converter
 from app.converter import ConversionError
 
@@ -108,3 +110,22 @@ def test_probe_rejects_non_youtube_url(client):
     response = client.post("/api/probe", json={"url": "https://example.com/video"})
     assert response.status_code == 422
     assert "YouTube" in response.json()["detail"]
+
+
+def test_events_stream_ends_with_the_finished_job(client, fake_convert):
+    created = client.post("/api/jobs", json={"url": URL, "format": "mp3"}).json()
+    wait_for_job(client, created["id"])
+
+    response = client.get(f"/api/jobs/{created['id']}/events")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = [line for line in response.text.splitlines() if line.startswith("data: ")]
+    assert len(events) == 1
+    job = json.loads(events[0].removeprefix("data: "))
+    assert job["status"] == "done"
+    assert job["download_url"] == f"/api/jobs/{created['id']}/file"
+
+
+def test_events_for_unknown_job_is_404(client):
+    assert client.get("/api/jobs/nope/events").status_code == 404
