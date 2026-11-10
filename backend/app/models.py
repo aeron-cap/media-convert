@@ -12,6 +12,7 @@ class ProbeRequest(BaseModel):
 
 
 class VideoInfo(BaseModel):
+    kind: Literal["video"] = "video"
     video_id: str | None
     title: str | None
     thumbnail: str | None
@@ -19,6 +20,24 @@ class VideoInfo(BaseModel):
     uploader: str | None
     # Height in pixels of the best video stream, to limit the quality choices.
     max_height: int | None
+
+
+class PlaylistEntry(BaseModel):
+    video_id: str
+    title: str | None
+    duration: int | None
+    thumbnail: str | None
+
+
+class PlaylistInfo(BaseModel):
+    kind: Literal["playlist"] = "playlist"
+    title: str | None
+    uploader: str | None
+    entries: list[PlaylistEntry]
+    # How many videos the playlist has; more than len(entries) if it was cut
+    # off at MAX_PLAYLIST_ITEMS.
+    total: int
+    truncated: bool
 
 
 class FormatInfo(BaseModel):
@@ -54,6 +73,9 @@ class Job(BaseModel):
     created_at: str
     started_at: str | None
     finished_at: str | None
+    # Set for jobs created from a playlist: the batch and the place in it.
+    batch_id: str | None
+    position: int | None
     download_url: str | None
     # When the job and its file are deleted automatically; null if never.
     expires_at: str | None
@@ -66,3 +88,36 @@ class Job(BaseModel):
             finished = datetime.fromisoformat(row["finished_at"])
             expires_at = (finished + timedelta(hours=retention_hours)).isoformat(timespec="seconds")
         return cls(**row, download_url=download_url, expires_at=expires_at)
+
+
+class BatchEntry(BaseModel):
+    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{11}$")
+    title: str | None = Field(default=None, max_length=300)
+
+
+class BatchCreate(BaseModel):
+    # The playlist link, kept for reference.
+    url: str = Field(min_length=1, max_length=2048)
+    title: str | None = Field(default=None, max_length=300)
+    format: Format
+    quality: str | None = Field(default=None, max_length=16)
+    entries: list[BatchEntry] = Field(min_length=1)
+
+
+class Batch(BaseModel):
+    id: str
+    url: str
+    title: str | None
+    format: Format
+    quality: str | None
+    created_at: str
+    zip_url: str
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "Batch":
+        return cls(**row, zip_url=f"/api/batches/{row['id']}/zip")
+
+
+class BatchCreated(BaseModel):
+    batch: Batch
+    jobs: list[Job]

@@ -1,0 +1,75 @@
+import { isActive, type Batch, type FormatInfo, type Job } from "../api";
+import { formatQuality } from "../format";
+import { JobItem } from "./JobItem";
+
+/** The conversions of one playlist, shown as a group with shared actions. */
+export function BatchGroup({
+  batch,
+  jobs,
+  formats,
+  onRemoveJob,
+  onRemoveBatch,
+}: {
+  batch: Batch | undefined;
+  jobs: Job[];
+  formats: FormatInfo[];
+  onRemoveJob: (job: Job) => void;
+  onRemoveBatch: (batchId: string, jobs: Job[]) => void;
+}) {
+  const ordered = [...jobs].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const done = jobs.filter((job) => job.status === "done").length;
+  const failed = jobs.filter((job) => job.status === "failed").length;
+  const active = jobs.some(isActive);
+  const finished = done + failed;
+
+  const format = formats.find((f) => f.id === jobs[0].format);
+  const summary = [
+    format?.label ?? jobs[0].format.toUpperCase(),
+    format ? formatQuality(format.kind, jobs[0].quality) : "",
+    `${done} of ${jobs.length} done`,
+    failed > 0 ? `${failed} failed` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <li class="batch">
+      <div class="batch-head">
+        <div class="job-body">
+          <p class="job-title">{batch?.title ?? "Playlist"}</p>
+          <p class="meta">{summary}</p>
+          {active && (
+            <div class="progress">
+              <progress
+                aria-label={`${finished} of ${jobs.length} videos finished`}
+                max={jobs.length}
+                value={finished}
+              />
+            </div>
+          )}
+        </div>
+        {batch && done > 0 && (
+          <a class="button primary" href={batch.zip_url} download>
+            {done === jobs.length ? "Download all" : `Download ${done}`} (zip)
+          </a>
+        )}
+        <button
+          type="button"
+          class="button quiet"
+          aria-label={`${active ? "Cancel" : "Remove"} playlist ${batch?.title ?? ""}`}
+          onClick={() => onRemoveBatch(jobs[0].batch_id!, jobs)}
+        >
+          {active ? "Cancel all" : "Remove all"}
+        </button>
+      </div>
+      <details open={active}>
+        <summary class="meta">Videos</summary>
+        <ul class="jobs">
+          {ordered.map((job) => (
+            <JobItem key={job.id} job={job} formats={formats} onRemove={onRemoveJob} />
+          ))}
+        </ul>
+      </details>
+    </li>
+  );
+}

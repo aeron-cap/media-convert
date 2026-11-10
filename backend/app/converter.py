@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import yt_dlp
 from yt_dlp.utils import DownloadError
@@ -81,6 +81,21 @@ def validate_url(url: str) -> str:
     if parsed.scheme not in ("http", "https") or (parsed.hostname or "").lower() not in YOUTUBE_HOSTS:
         raise ConversionError("Enter a YouTube link (youtube.com or youtu.be).")
     return url
+
+
+def video_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def is_playlist_url(url: str) -> bool:
+    """True for a link to a playlist itself, not to one video inside it."""
+    parsed = urlparse(url)
+    return parsed.path.rstrip("/") == "/playlist" and bool(parse_qs(parsed.query).get("list"))
+
+
+def content_disposition(filename: str) -> str:
+    """A Content-Disposition header value that survives non-ASCII names."""
+    return f"attachment; filename*=utf-8\'\'{quote(filename)}"
 
 
 def default_quality(format: str) -> str | None:
@@ -318,6 +333,7 @@ def _summary(info: dict[str, Any]) -> dict[str, Any]:
     if info.get("is_live"):
         raise ConversionError("Live streams can't be converted while they are live.")
     return {
+        "kind": "video",
         "video_id": info.get("id"),
         "title": info.get("title"),
         "thumbnail": info.get("thumbnail"),
@@ -327,15 +343,50 @@ def _summary(info: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _playlist_summary(info: dict[str, Any], limit: int) -> dict[str, Any]:
+    entries = []
+    for entry in info.get("entries") or []:
+        video_id = (entry or {}).get("id")
+        # Private and deleted videos are listed without a duration or channel.
+        if not video_id or entry.get("title") in ("[Private video]", "[Deleted video]"):
+            continue
+        entries.append(
+            {
+                "video_id": video_id,
+                "title": entry.get("title"),
+                "duration": int(entry["duration"]) if entry.get("duration") else None,
+                "thumbnail": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
+            }
+        )
+    total = info.get("playlist_count") or len(entries)
+    return {
+        "kind": "playlist",
+        "title": info.get("title"),
+        "uploader": info.get("uploader") or info.get("channel"),
+        "entries": entries[:limit],
+        "total": total,
+        "truncated": total > limit,
+    }
+
+
 def probe(url: str) -> dict[str, Any]:
-    """Return metadata for a single video without downloading it."""
+    """Return details of a video, or of a playlist and its videos, without downloading."""
     url = validate_url(url)
     cached = _info_cache.take(url)
     if cached is not None:
         return cached
     try:
-        with _youtube_dl() as ydl:
-            summary = _summary(_extract(ydl, url))
+        if is_playlist_url(url):
+            # List the playlist's videos without fetching each one.
+            limit = get_settings().max_playlist_items
+            flat = {"noplaylist": False, "extract_flat": "in_playlist", "playlistend": limit}
+            with _youtube_dl(flat) as ydl:
+                summary = _playlist_summary(_extract(ydl, url), limit)
+            if not summary["entries"]:
+                raise ConversionError("This playlist has no videos that can be converted.")
+        else:
+            with _youtube_dl() as ydl:
+                summary = _summary(_extract(ydl, url))
     except DownloadError as error:
         raise _friendly(error) from error
     _info_cache.put(url, summary)

@@ -30,6 +30,8 @@ def run_cleanup(db: Database, settings: Settings) -> dict[str, int]:
             converter.remove_files(settings.files_dir, job["id"])
             expired += 1
 
+    db.delete_empty_batches()
+
     orphans = 0
     if settings.files_dir.is_dir():
         known = db.job_ids()

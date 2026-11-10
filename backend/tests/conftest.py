@@ -30,6 +30,7 @@ def fake_convert(monkeypatch):
         calls.append((url, format, quality))
         on_info(
             {
+                "kind": "video",
                 "video_id": "abc123",
                 "title": 'My: "Video" / Title?',
                 "thumbnail": "https://example.test/thumb.jpg",

@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     url         TEXT NOT NULL,
     format      TEXT NOT NULL,
     quality     TEXT,
+    batch_id    TEXT,
+    position    INTEGER,
     status      TEXT NOT NULL DEFAULT 'queued',
     stage       TEXT,
     progress    REAL NOT NULL DEFAULT 0,
@@ -26,6 +28,15 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_created_at ON jobs (created_at);
+
+CREATE TABLE IF NOT EXISTS batches (
+    id          TEXT PRIMARY KEY,
+    url         TEXT NOT NULL,
+    title       TEXT,
+    format      TEXT NOT NULL,
+    quality     TEXT,
+    created_at  TEXT NOT NULL
+);
 """
 
 # Columns update_job() may write. Anything else is a programming error.
@@ -62,15 +73,28 @@ class Database:
             conn.executescript(SCHEMA)
             # Columns added after the first release, for databases created before.
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
-            if "quality" not in columns:
-                conn.execute("ALTER TABLE jobs ADD COLUMN quality TEXT")
+            for name, kind in (("quality", "TEXT"), ("batch_id", "TEXT"), ("position", "INTEGER")):
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {kind}")
+            conn.execute("CREATE INDEX IF NOT EXISTS jobs_batch_id ON jobs (batch_id)")
 
-    def create_job(self, url: str, format: str, quality: str | None = None) -> dict[str, Any]:
+    def create_job(
+        self,
+        url: str,
+        format: str,
+        quality: str | None = None,
+        *,
+        batch_id: str | None = None,
+        position: int | None = None,
+        title: str | None = None,
+        video_id: str | None = None,
+    ) -> dict[str, Any]:
         job_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO jobs (id, url, format, quality, created_at) VALUES (?, ?, ?, ?, ?)",
-                (job_id, url, format, quality, now()),
+                "INSERT INTO jobs (id, url, format, quality, batch_id, position, title, video_id, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (job_id, url, format, quality, batch_id, position, title, video_id, now()),
             )
         job = self.get_job(job_id)
         assert job is not None
@@ -81,7 +105,7 @@ class Database:
             row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
 
-    def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+    def list_jobs(self, limit: int = 500) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)
@@ -129,3 +153,51 @@ class Database:
     def job_ids(self) -> set[str]:
         with self._connect() as conn:
             return {row["id"] for row in conn.execute("SELECT id FROM jobs")}
+
+    # --- Batches: jobs created together from one playlist ---
+
+    def create_batch(
+        self, url: str, title: str | None, format: str, quality: str | None
+    ) -> dict[str, Any]:
+        batch_id = uuid.uuid4().hex
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO batches (id, url, title, format, quality, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (batch_id, url, title, format, quality, now()),
+            )
+        batch = self.get_batch(batch_id)
+        assert batch is not None
+        return batch
+
+    def get_batch(self, batch_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_batches(self) -> list[dict[str, Any]]:
+        """Batches that still have at least one job."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM batches WHERE id IN (SELECT batch_id FROM jobs) "
+                "ORDER BY created_at DESC, rowid DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def batch_jobs(self, batch_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE batch_id = ? ORDER BY position", (batch_id,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_batch(self, batch_id: str) -> bool:
+        with self._connect() as conn:
+            return conn.execute("DELETE FROM batches WHERE id = ?", (batch_id,)).rowcount > 0
+
+    def delete_empty_batches(self) -> int:
+        with self._connect() as conn:
+            return conn.execute(
+                "DELETE FROM batches WHERE id NOT IN "
+                "(SELECT batch_id FROM jobs WHERE batch_id IS NOT NULL)"
+            ).rowcount

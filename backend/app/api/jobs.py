@@ -9,7 +9,7 @@ from .. import converter
 from ..config import get_settings
 from ..converter import ConversionError
 from ..db import UNFINISHED, Database
-from ..models import FormatInfo, Job, JobCreate, ProbeRequest, VideoInfo
+from ..models import FormatInfo, Job, JobCreate, PlaylistInfo, ProbeRequest, VideoInfo
 from ..worker import Worker
 
 router = APIRouter()
@@ -67,7 +67,7 @@ def list_formats() -> list[dict]:
     ]
 
 
-@router.post("/probe", response_model=VideoInfo)
+@router.post("/probe", response_model=VideoInfo | PlaylistInfo)
 def probe(body: ProbeRequest) -> dict:
     try:
         return converter.probe(body.url)

@@ -2,6 +2,7 @@ export type Format = string;
 export type Status = "queued" | "running" | "done" | "failed";
 
 export interface VideoInfo {
+  kind: "video";
   video_id: string | null;
   title: string | null;
   thumbnail: string | null;
@@ -9,6 +10,36 @@ export interface VideoInfo {
   uploader: string | null;
   /** Height in pixels of the best video stream available. */
   max_height: number | null;
+}
+
+export interface PlaylistEntry {
+  video_id: string;
+  title: string | null;
+  duration: number | null;
+  thumbnail: string | null;
+}
+
+export interface PlaylistInfo {
+  kind: "playlist";
+  title: string | null;
+  uploader: string | null;
+  entries: PlaylistEntry[];
+  /** Videos in the playlist; more than `entries` when the list was cut off. */
+  total: number;
+  truncated: boolean;
+}
+
+export type ProbeResult = VideoInfo | PlaylistInfo;
+
+/** The conversions created together from one playlist. */
+export interface Batch {
+  id: string;
+  url: string;
+  title: string | null;
+  format: Format;
+  quality: string | null;
+  created_at: string;
+  zip_url: string;
 }
 
 export interface FormatInfo {
@@ -38,6 +69,9 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  /** Set for conversions that came from a playlist. */
+  batch_id: string | null;
+  position: number | null;
   download_url: string | null;
   /** When the job and its file are deleted automatically; null if never. */
   expires_at: string | null;
@@ -74,8 +108,27 @@ async function errorMessage(response: Response): Promise<string> {
   return `The server returned an error (${response.status}).`;
 }
 
-export function probe(url: string): Promise<VideoInfo> {
-  return request<VideoInfo>("/api/probe", { url });
+export function probe(url: string): Promise<ProbeResult> {
+  return request<ProbeResult>("/api/probe", { url });
+}
+
+export function createBatch(body: {
+  url: string;
+  title: string | null;
+  format: Format;
+  quality: string | null;
+  entries: { video_id: string; title: string | null }[];
+}): Promise<{ batch: Batch; jobs: Job[] }> {
+  return request<{ batch: Batch; jobs: Job[] }>("/api/batches", body);
+}
+
+export function listBatches(): Promise<Batch[]> {
+  return request<Batch[]>("/api/batches");
+}
+
+/** Delete a playlist's conversions and files; running ones are cancelled. */
+export function deleteBatch(batchId: string): Promise<void> {
+  return request<void>(`/api/batches/${batchId}`, undefined, "DELETE");
 }
 
 export function listFormats(): Promise<FormatInfo[]> {
