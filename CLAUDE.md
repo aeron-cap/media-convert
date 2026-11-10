@@ -10,3 +10,5 @@ Main Stack:
 - Preact
 - Docker
 - SQLite
+
+See @AGENTS.md for how to work in this repository and for lessons learned.

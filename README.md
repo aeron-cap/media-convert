@@ -1,124 +1,85 @@
-# Media Converter
+# TITLE_HERE
 
-A self-hosted web app that converts YouTube videos and playlists into audio and
-video files. Paste a link, pick a format, download the result.
+A small web app that turns YouTube videos and playlists into audio or video
+files. Paste a link, pick a format, and download the result.
 
 - **Audio:** MP3, M4A, OGG, FLAC, WAV
 - **Video:** MP4, WEBM, MKV, up to the video's best resolution
-- **Playlists:** pick the videos you want and download them as one zip
-- **History:** finished conversions stay available until they expire
+- **Playlists:** tick the videos you want and download them as one zip
+- **History:** finished conversions stay in the list until they expire
 
-Built with FastAPI, yt-dlp, ffmpeg, Preact, SQLite and Docker.
+## Self host
 
-> **There is no login.** Anyone who can reach the page can use it. Run it on a
-> network you trust, or put it behind a VPN or a reverse proxy that adds
-> authentication. Do not expose it to the internet as it is.
+This project is meant to be self-hosted: you run it on your own computer or
+server, for yourself and people you trust. There is no hosted version and no
+public instance.
 
-## Set it up
+> **There is no login.** Anyone who can open the page can use it and can see
+> and remove every conversion. Keep it on a network you trust, or put it behind
+> a VPN or a reverse proxy that asks for a password. Do not put it on the open
+> internet as it is.
 
-You need [Docker](https://docs.docker.com/get-docker/) with Docker Compose
-(included in Docker Desktop), about 1 GB of disk space for the image, and room
-for the files you convert.
+You need [Docker](https://docs.docker.com/get-docker/) with Docker Compose,
+about 1 GB of disk space for the image, and room for the files you convert.
 
-1. Get the code:
+```bash
+git clone <this repository's address> media-convert
+```
 
-   ```bash
-   git clone <this repository's address> media-convert
-   ```
+```bash
+cd media-convert
+```
 
-   ```bash
-   cd media-convert
-   ```
+```bash
+docker compose up -d --build
+```
 
-2. Start it:
+The first build takes a few minutes. Then open http://localhost:8000, or
+`http://<the server's address>:8000` from another device on your network.
 
-   ```bash
-   docker compose up -d --build
-   ```
+To stop it, run `docker compose down`. Your files and history are kept in a
+Docker volume and are still there next time. `docker compose down -v` wipes
+them.
 
-   The first build takes a few minutes.
+### Settings
 
-3. Open http://localhost:8000, or `http://<the server's address>:8000` from
-   another device on the same network.
-
-To stop it, run `docker compose down`. Converted files and history are kept in
-a Docker volume and are still there when you start it again.
-
-## Use it
-
-1. Paste a link to a YouTube video or playlist and press **Find**.
-2. Choose a format and, where there is one, a quality.
-3. Press **Convert**. Progress is shown in the list below.
-4. Press **Download** when it finishes. For a playlist, **Download all (zip)**
-   fetches every finished file at once.
-
-Links that work: `youtube.com/watch?v=…`, `youtu.be/…`, `youtube.com/shorts/…`,
-`music.youtube.com/watch?v=…` and `youtube.com/playlist?list=…`. A video opened
-from inside a playlist (`watch?v=…&list=…`) is treated as that one video.
-
-What can't be converted: private, members-only, paid and region-blocked videos,
-live streams that are still running, and age-restricted videos unless you set
-up [account cookies](#youtube-bot-checks).
-
-Good to know about formats:
-
-- **M4A** copies YouTube's own audio without re-encoding, so it has no quality
-  choice and is the fastest audio format.
-- **MP4** and **MKV** copy the video as it is. Above 1080p, YouTube's video is
-  VP9 or AV1 rather than H.264, which older players may not open.
-- **WEBM** is re-encoded when YouTube has no WEBM version, which is slow.
-
-## Settings
-
-All settings are optional. Copy `.env.example` to `.env`, change what you need,
-and run `docker compose up -d` again.
+Everything works without configuration. To change something, copy
+`.env.example` to `.env`, edit it, and run `docker compose up -d` again.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `PORT` | `8000` | Port the app is reachable on. |
 | `MAX_CONCURRENT_JOBS` | `2` | Conversions that run at the same time. |
-| `RETENTION_HOURS` | `24` | Hours a finished conversion and its file are kept. `0` keeps them until you remove them. |
+| `RETENTION_HOURS` | `24` | Hours a finished file is kept. `0` keeps it until you remove it. |
 | `MAX_DURATION_MINUTES` | `180` | Longest video accepted. `0` removes the limit. |
-| `MAX_PLAYLIST_ITEMS` | `50` | Most videos listed and converted from one playlist. |
-| `MAX_PENDING_JOBS` | `100` | Most conversions that may be waiting or running; more are refused. `0` removes the limit. |
+| `MAX_PLAYLIST_ITEMS` | `50` | Most videos taken from one playlist. |
+| `MAX_PENDING_JOBS` | `100` | Most conversions waiting or running at once. `0` removes the limit. |
 | `YT_MIN_INTERVAL_SECONDS` | `2` | Minimum gap between lookups on YouTube. |
 | `YT_REQUEST_SLEEP_SECONDS` | `0.5` | Pause between the requests of one lookup. |
 | `YT_RETRIES` | `2` | Retries when YouTube shows its bot check. |
 | `YT_PROXY` | none | Proxy for all YouTube traffic. |
 | `YT_POT_PROVIDER_URL` | none | Address of a PO token provider (see below). |
 
-## YouTube bot checks
+### When YouTube asks "are you a bot?"
 
-YouTube sometimes answers a server with "Sign in to confirm you're not a bot".
-The app already does three things to avoid that, with no setup:
+YouTube sometimes refuses a server with "Sign in to confirm you're not a bot".
+The app already spaces its requests out and retries on its own. If you still
+see the message often, try these in order:
 
-- It remembers a video's details for a few minutes, so looking the same link up
-  again doesn't ask YouTube again.
-- It spaces its requests out (`YT_MIN_INTERVAL_SECONDS`, `YT_REQUEST_SLEEP_SECONDS`).
-- It retries a few times when the check does appear (`YT_RETRIES`).
-
-If you still see the check often, these are opt-in, strongest last:
-
-1. **Use a home connection.** Datacenter addresses are flagged far more than
-   residential ones. Host the app at home, or set `YT_PROXY` to a proxy that
-   runs on your home network (for example reached over WireGuard or Tailscale).
+1. **Use a home connection.** Servers in datacenters are flagged far more than
+   home internet. Host the app at home, or point `YT_PROXY` at a proxy on your
+   home network.
 2. **PO tokens.** Set `YT_POT_PROVIDER_URL=http://pot-provider:4416` in `.env`
-   and start the provider with `docker compose --profile pot up -d`. This runs
-   the third-party [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider).
-   It needs no account.
-3. **Account cookies.** Export cookies from a logged-in browser as a
-   Netscape-format `cookies.txt`, put it next to `docker-compose.yml`, and
-   uncomment the `cookies.txt` volume line there. YouTube can flag or ban
-   accounts used this way, so use a throwaway account, never your main one.
-   Cookies expire; export them again when the check comes back. Cookies are
-   also what lets age-restricted videos through.
+   and run `docker compose --profile pot up -d`. No account is needed.
+3. **Account cookies.** Export a `cookies.txt` (Netscape format) from a
+   logged-in browser, put it next to `docker-compose.yml`, and uncomment the
+   `cookies.txt` line in that file. YouTube can ban accounts used this way, so
+   use a throwaway account, never your main one.
 
-`GET /api/health` shows which of these are switched on.
+### Keeping it working
 
-## Keep it working
-
-YouTube changes often, and conversions start failing when the downloader
-(yt-dlp) falls behind. Rebuilding picks up its latest release:
+YouTube changes often, and conversions start failing when the downloader falls
+behind. If things that used to work stop working, rebuild:
 
 ```bash
 docker compose build --pull --no-cache
@@ -128,60 +89,68 @@ docker compose build --pull --no-cache
 docker compose up -d
 ```
 
-Do this whenever conversions that used to work start failing, and every few
-weeks otherwise.
+## Stack
 
-## Troubleshooting
-
-| What you see | What to do |
+| Part | What it does here |
 | --- | --- |
-| "YouTube asked this server to prove it isn't a bot" | Wait a minute and retry. If it keeps happening, see [YouTube bot checks](#youtube-bot-checks). |
-| Every conversion fails, including ones that used to work | Rebuild to update yt-dlp: see [Keep it working](#keep-it-working). |
-| "This server couldn't reach YouTube" | Check the server's internet connection and, if set, `YT_PROXY`. |
-| "Too many conversions are waiting already" | Wait for some to finish, or raise `MAX_PENDING_JOBS`. |
-| "The server ran out of disk space" | Press **Clear finished**, or lower `RETENTION_HOURS`. |
-| A conversion shows "Interrupted by a server restart" | The app was restarted while it ran. Start it again. |
-| The page says it can't reach the server | Check `docker compose ps` and `docker compose logs media-convert`. |
+| [Python](https://www.python.org/) + [FastAPI](https://fastapi.tiangolo.com/) | The server and its API. |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Looks videos up and downloads them. |
+| [Deno](https://deno.com/) | Runs the small scripts yt-dlp needs to read YouTube's player, in a sandbox. |
+| [ffmpeg](https://ffmpeg.org/) | Converts the download into the format you chose. |
+| [Preact](https://preactjs.com/) + [Vite](https://vite.dev/) | The web page. |
+| [SQLite](https://sqlite.org/) | Remembers conversions and their status. |
+| [Docker](https://www.docker.com/) | Packages all of the above into one image. |
 
-## Where things are stored
+## Routes
 
-Everything lives in the Docker volume `media-convert-data`: the SQLite database
-(`media-convert.db`) and the converted files (`files/`). Files and their history
-entries are deleted after `RETENTION_HOURS`. To wipe everything:
+The page talks to the server through these. Interactive documentation is at
+`/docs` while the app is running.
 
-```bash
-docker compose down -v
-```
+| Method | Route | What it does |
+| --- | --- | --- |
+| `GET` | `/` | The web page. |
+| `GET` | `/api/health` | Says whether the server and ffmpeg are working. |
+| `GET` | `/api/formats` | Lists the output formats and their quality choices. |
+| `POST` | `/api/probe` | Looks a link up and returns the video's or playlist's details. |
+| `POST` | `/api/jobs` | Starts converting one video. |
+| `GET` | `/api/jobs` | Lists all conversions, newest first. |
+| `DELETE` | `/api/jobs` | Removes every finished conversion and its file. |
+| `GET` | `/api/jobs/{id}` | Returns one conversion and its status. |
+| `DELETE` | `/api/jobs/{id}` | Removes one conversion; cancels it if it is still running. |
+| `GET` | `/api/jobs/{id}/events` | Sends live progress updates for one conversion. |
+| `GET` | `/api/jobs/{id}/file` | Downloads the finished file. |
+| `POST` | `/api/batches` | Starts converting the chosen videos of a playlist. |
+| `GET` | `/api/batches` | Lists playlist conversions. |
+| `DELETE` | `/api/batches/{id}` | Removes a playlist conversion and all its files. |
+| `GET` | `/api/batches/{id}/zip` | Downloads a playlist's finished files as one zip. |
 
-## What is and isn't protected
+## Contributing
 
-The app only accepts links to YouTube's own addresses and only runs yt-dlp's
-YouTube code, so it can't be used to make the server fetch other sites. It
-runs as an unprivileged user in the container, limits video length, playlist
-size and queue length, and sends downloads as attachments.
+Contributions are welcome. A few courtesies keep things pleasant:
 
-It does **not** have accounts, passwords or per-user separation: everyone who
-can open the page sees and can remove every conversion. Keeping strangers out
-is up to your network, VPN or reverse proxy. If you use a reverse proxy, turn
-off response buffering for `/api/jobs/*/events` so progress updates arrive live.
+- **Open an issue first** for anything bigger than a small fix, so nobody
+  builds something that won't be merged.
+- **Keep changes small and focused.** One topic per pull request.
+- **Run the tests** before you send it, and add one for what you changed.
+- **Describe what and why** in the pull request, in plain words.
+- **Be kind.** Assume good intent, and review the code, not the person.
+- **Don't send** features whose purpose is to get around paywalls, DRM or
+  private content. They won't be merged.
 
-Only convert videos you have the right to download. You are responsible for
-following YouTube's terms and the copyright law where you live.
+If you work with a coding agent, [AGENTS.md](AGENTS.md) has the project's
+conventions and the pitfalls already found.
 
-## Develop
-
-Backend (Python 3.12 or newer, with ffmpeg and [Deno](https://deno.com) on your PATH):
+To work on it locally you need Python 3.12 or newer, Node 22, and ffmpeg and
+[Deno](https://deno.com) on your PATH.
 
 ```bash
 cd backend
 python -m venv .venv
-.venv/Scripts/activate        # Windows; use `source .venv/bin/activate` elsewhere
+source .venv/bin/activate     # on Windows: .venv/Scripts/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 pytest
 ```
-
-Frontend (Node 22):
 
 ```bash
 cd frontend
@@ -189,20 +158,109 @@ npm install
 npm run dev
 ```
 
-The Vite dev server runs on http://localhost:5173 and proxies `/api` to the
-backend on port 8000. The API is documented at http://localhost:8000/docs.
+The page then runs on http://localhost:5173 and talks to the server on
+port 8000.
 
-## Layout
+## Restrictions
 
-```
-backend/app/            FastAPI application
-  api/                  HTTP endpoints: health, jobs, playlists (batches)
-  converter.py          yt-dlp and ffmpeg: lookup, download, conversion
-  worker.py             runs conversions on a small thread pool
-  cleanup.py            deletes expired conversions and stray files
-  db.py                 SQLite storage
-backend/tests/          pytest tests
-frontend/src/           Preact single-page UI
-Dockerfile              multi-stage image: builds the UI, runs the API with ffmpeg
-docker-compose.yml      the app, plus the optional PO token provider
-```
+Things the app refuses on purpose:
+
+- **YouTube only.** Links to any other site are rejected.
+- **Videos and playlists only.** Channel, search and feed links are rejected.
+- **No protected content.** Private, members-only, paid and region-blocked
+  videos are not converted, and nothing in the app tries to get around that.
+- **No live streams** while they are still running.
+- **Age-restricted videos** only work if you supply cookies from an account
+  that is allowed to watch them.
+- **Length limit.** Videos longer than 3 hours are refused by default.
+- **Playlist limit.** Only the first 50 videos of a playlist are offered by
+  default.
+- **Queue limit.** At most 100 conversions may be waiting or running by
+  default.
+- **Files expire.** Finished files are deleted after 24 hours by default.
+
+## Limitations
+
+Things the app can't do, or doesn't do well:
+
+- **No accounts.** Everyone who can open the page shares one list of
+  conversions.
+- **It depends on YouTube.** When YouTube changes something, conversions can
+  fail until you rebuild the app. YouTube may also block the server with its
+  bot check, especially on datacenter connections.
+- **Conversions don't survive a restart.** One that was running when the
+  server stopped is marked as failed and has to be started again.
+- **Cancelling isn't instant** once a download has finished and ffmpeg is
+  converting; it stops when that step ends.
+- **WEBM can be slow**, because the video is re-encoded when YouTube has no
+  WEBM version of it.
+- **MP4 and MKV above 1080p** use newer video formats (VP9 or AV1) that some
+  older players can't open.
+- **M4A has no quality choice**; it keeps YouTube's audio exactly as it is.
+- **One server only.** It isn't built to be spread across several machines or
+  to serve many people at once.
+
+## Copyright
+
+**This software.** Copyright © 2026 aeron-cap and contributors. It is released
+under the MIT License; see [License](#license).
+
+**No affiliation.** This project is not affiliated with, endorsed by, or
+sponsored by YouTube or Google. "YouTube" is a trademark of Google LLC and is
+used here only to say what the app works with.
+
+**The videos are not ours, and not automatically yours.** This project
+contains no videos, music or other media, hosts none, and gives you no rights
+to any. Videos on YouTube belong to their creators or rights holders. Only
+download what you are allowed to: your own uploads, works in the public
+domain, works under a licence that permits it (such as Creative Commons), or
+works you have the owner's permission for.
+
+**You are responsible for how you use it.** The person who runs or uses a copy
+of this app decides what it downloads. It is your job to follow the copyright
+law where you live and the terms of any service you use it with, including
+[YouTube's Terms of Service](https://www.youtube.com/t/terms), which restrict
+downloading. The authors and contributors do not control, monitor, or take
+part in what any copy of this software is used for, and accept no
+responsibility for it. That includes anyone who uses it to infringe copyright,
+break a service's terms, resell content, or run a public or paid service.
+
+**Not for getting around protection.** The app does not break DRM or
+encryption and is not meant to bypass paywalls, private videos, or other
+access controls.
+
+**No warranty.** The software is provided as it is, without any guarantee, as
+the licence says.
+
+**Rights holders.** This repository holds only source code. If you believe
+something in the repository itself infringes your rights, open an issue and it
+will be looked at.
+
+**Third-party software.** The app uses these projects, each under its own
+licence. Their licences apply to them, not this project's.
+
+| Project | Licence |
+| --- | --- |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | The Unlicense |
+| [ffmpeg](https://ffmpeg.org/legal.html) | LGPL 2.1 or later; GPL for the build in the Docker image |
+| [FastAPI](https://github.com/fastapi/fastapi) | MIT |
+| [Uvicorn](https://github.com/encode/uvicorn) | BSD 3-Clause |
+| [Preact](https://github.com/preactjs/preact) | MIT |
+| [Vite](https://github.com/vitejs/vite) | MIT |
+| [Deno](https://github.com/denoland/deno) | MIT |
+| [SQLite](https://sqlite.org/copyright.html) | Public domain |
+| [Python](https://docs.python.org/3/license.html) | PSF License |
+| [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) (optional) | GPL 3.0 |
+
+None of these are copied into this repository; they are downloaded when the
+Docker image is built. If you share a built image with others, you are
+distributing those projects too and their licences (notably the GPL for
+ffmpeg and the PO token plugin) apply to what you share.
+
+*This section is a plain-language notice, not legal advice.*
+
+## License
+
+Released under the [MIT License](LICENSE). In short: you may use, copy, change
+and share this software, including commercially, as long as you keep the
+copyright notice, and it comes with no warranty.
