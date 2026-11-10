@@ -5,13 +5,25 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import router as api_router
 from .config import get_settings
+from .db import Database
+from .worker import Worker
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.files_dir.mkdir(parents=True, exist_ok=True)
+
+    db = Database(settings.db_path)
+    db.init()
+    worker = Worker(db, settings)
+    worker.start()
+    app.state.db = db
+    app.state.worker = worker
+
     yield
+
+    worker.stop()
 
 
 def create_app() -> FastAPI:

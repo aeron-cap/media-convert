@@ -13,6 +13,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# yt-dlp needs a JavaScript runtime to extract from YouTube.
+COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DATA_DIR=/data \
