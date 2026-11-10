@@ -19,6 +19,7 @@ import {
 import { BatchGroup } from "./components/BatchGroup";
 import { ConvertForm } from "./components/ConvertForm";
 import { JobItem } from "./components/JobItem";
+import { Logo } from "./components/Logo";
 import { formatQuality } from "./format";
 
 // How often the list is reloaded: quickly while conversions are waiting or
@@ -250,7 +251,10 @@ export function App() {
   return (
     <main class="page">
       <header class="masthead">
-        <h1>Media Convert</h1>
+        <h1 class="brand">
+          <Logo />
+          Media Convert
+        </h1>
         <p class="lead">YouTube videos and playlists to audio and video files.</p>
       </header>
 
