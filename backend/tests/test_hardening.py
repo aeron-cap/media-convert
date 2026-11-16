@@ -75,13 +75,113 @@ def test_links_that_are_not_a_video_or_playlist_are_refused(url):
         validate_url(url)
 
 
-def test_only_youtube_video_and_playlist_extractors_may_run():
+# Single TikTok videos, and the link yt-dlp is given for each.
+TIKTOK_VIDEO_LINKS = {
+    "https://www.tiktok.com/@hankgreen1/video/7047596209028074758":
+        "https://www.tiktok.com/@hankgreen1/video/7047596209028074758",
+    "https://tiktok.com/@hankgreen1/video/7047596209028074758?is_from_webapp=1&sender_device=pc":
+        "https://www.tiktok.com/@hankgreen1/video/7047596209028074758",
+    "https://m.tiktok.com/@patrox.official/video/6742501081818877190/":
+        "https://www.tiktok.com/@patrox.official/video/6742501081818877190",
+    "https://WWW.TikTok.com/@/video/6742501081818877190":
+        "https://www.tiktok.com/@/video/6742501081818877190",
+    "https://www.tiktokv.com/share/video/7668090902816017671/":
+        "https://www.tiktokv.com/share/video/7668090902816017671/",
+    "https://tiktokv.com/share/video/7668090902816017671":
+        "https://www.tiktokv.com/share/video/7668090902816017671/",
+    "https://vm.tiktok.com/ZTR45GpSF/":
+        "https://vm.tiktok.com/ZTR45GpSF/",
+    "https://vt.tiktok.com/ZSe4FqkKd":
+        "https://vt.tiktok.com/ZSe4FqkKd/",
+    "https://www.tiktok.com/t/ZTRC5xgJp/?k=1":
+        "https://www.tiktok.com/t/ZTRC5xgJp/",
+    "http://www.tiktok.com:443/@hankgreen1/video/7047596209028074758#top":
+        "https://www.tiktok.com/@hankgreen1/video/7047596209028074758",
+}
+
+
+@pytest.mark.parametrize(("url", "fetched"), list(TIKTOK_VIDEO_LINKS.items()))
+def test_tiktok_video_links_are_accepted_in_the_form_yt_dlp_knows(url, fetched):
+    assert validate_url(url) == fetched
+    assert converter.source_of(fetched) == "tiktok"
+    assert not converter.is_playlist_url(fetched)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.tiktok.com/",
+        "https://www.tiktok.com/@hankgreen1",
+        "https://www.tiktok.com/@hankgreen1/",
+        "https://www.tiktok.com/@hankgreen1/video/",
+        "https://www.tiktok.com/@hankgreen1/video/abc",
+        "https://www.tiktok.com/@hankgreen1/video/7047596209028074758/extra",
+        "https://www.tiktok.com/@hankgreen1/live",
+        "https://www.tiktok.com/@hankgreen1/collection/stuff-7047596209028074758",
+        "https://www.tiktok.com/tag/science",
+        "https://www.tiktok.com/music/original-sound-7047596209028074758",
+        "https://www.tiktok.com/sticker/thing-7047596209028074758",
+        "https://www.tiktok.com/search?q=science",
+        "https://www.tiktok.com/foryou",
+        "https://www.tiktok.com/live",
+        "https://www.tiktok.com/t/",
+        "https://vm.tiktok.com/",
+        "https://vm.tiktok.com/ZTR45GpSF/more",
+        "https://vm.tiktok.com/../etc",
+        "https://www.tiktokv.com/share/user/123",
+    ],
+)
+def test_tiktok_links_that_are_not_a_single_video_are_refused(url):
+    with pytest.raises(ConversionError, match="isn't a single TikTok video"):
+        validate_url(url)
+
+
+def test_tiktok_photo_posts_are_refused_with_a_reason():
+    with pytest.raises(ConversionError, match="photo post"):
+        validate_url("https://www.tiktok.com/@someone/photo/7047596209028074758")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.tiktok.com@evil.test/@a/video/7047596209028074758",
+        "https://user:pass@www.tiktok.com/@a/video/7047596209028074758",
+        "https://www.tiktok.com:8443/@a/video/7047596209028074758",
+        "https://www.tiktok.com/@a/video/70475962090 28074758",
+        "https://tiktok.com.evil.test/@a/video/7047596209028074758",
+        "https://eviltiktok.com/@a/video/7047596209028074758",
+        "https://www.tiktok.co/@a/video/7047596209028074758",
+        "https://vm.tiktok.com.evil.test/ZTR45GpSF/",
+        "https://www.douyin.com/video/7047596209028074758",
+        "ftp://www.tiktok.com/@a/video/7047596209028074758",
+    ],
+)
+def test_tiktok_look_alike_links_are_refused(url):
+    with pytest.raises(ConversionError, match="YouTube or TikTok link"):
+        validate_url(url)
+
+
+def test_source_of_tells_the_sites_apart():
+    assert converter.source_of("https://youtu.be/abc123") == "youtube"
+    assert converter.source_of("https://music.youtube.com/watch?v=abc123") == "youtube"
+    assert converter.source_of("https://vm.tiktok.com/ZTR45GpSF/") == "tiktok"
+    with pytest.raises(ConversionError):
+        converter.source_of("https://example.com/video")
+
+
+def test_tiktok_links_are_never_playlists():
+    assert converter.is_playlist_url("https://www.youtube.com/playlist?list=PLabc")
+    assert not converter.is_playlist_url("https://www.tiktok.com/playlist?list=PLabc")
+
+
+def test_only_youtube_and_tiktok_video_extractors_may_run():
     def handled(ydl, url):
         return any(ie.suitable(url) for ie in ydl._ies.values())
 
     with converter._youtube_dl() as ydl:
         assert set(ydl._ies) == {
             "Youtube", "YoutubeTab", "YoutubePlaylist", "YoutubeTruncatedID", "YoutubeTruncatedURL",
+            "TikTok", "TikTokVM",
         }
         assert handled(ydl, "https://www.youtube.com/watch?v=aqz-KE-bpKQ")
         assert handled(ydl, "https://youtu.be/aqz-KE-bpKQ")
@@ -89,6 +189,18 @@ def test_only_youtube_video_and_playlist_extractors_may_run():
         assert handled(ydl, "https://www.youtube.com/playlist?list=PLabc")
         assert not handled(ydl, "https://example.com/video.mp4")
         assert not handled(ydl, "https://www.youtube.com/results?search_query=blender")
+        # Every TikTok link validate_url lets through has an extractor ...
+        for url in TIKTOK_VIDEO_LINKS:
+            assert handled(ydl, validate_url(url)), url
+        # ... and profiles, tags, sounds and live streams have none.
+        for url in (
+            "https://www.tiktok.com/@hankgreen1",
+            "https://www.tiktok.com/tag/science",
+            "https://www.tiktok.com/music/original-sound-7047596209028074758",
+            "https://www.tiktok.com/@hankgreen1/live",
+            "https://www.tiktok.com/@hankgreen1/collection/stuff-7047596209028074758",
+        ):
+            assert not handled(ydl, url), url
 
 
 # --- error messages ---
@@ -124,6 +236,46 @@ def test_youtube_errors_are_explained_in_plain_words(raw, expected):
     # None of yt-dlp's command-line advice reaches the user.
     assert "--" not in message
     assert "abc123" not in message
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Your IP address is blocked from accessing this post", "doesn't show this video in the country"),
+        (
+            "You do not have permission to view this post. Log into an account that has access. "
+            "Use --cookies-from-browser or --cookies for the authentication.",
+            "private on TikTok",
+        ),
+        ("This post may not be comfortable for some audiences. Log in for access", "age-restricted"),
+        ("TikTok is requiring login for access to this content", "signed-in account"),
+        ("Unexpected response from webpage request", "TikTok refused this server's request"),
+        ("Unable to solve JS challenge", "may need an update"),
+        ("Video not available, status code 10231", "may have been removed"),
+        ("Unable to download webpage: HTTP Error 429: Too Many Requests", "TikTok is limiting requests"),
+        ("Unable to download webpage: [Errno -3] Temporary failure in name resolution", "couldn't reach TikTok"),
+        ("Unsupported URL: https://www.tiktok.com/@a/photo/1", "doesn't point to a TikTok video."),
+        ("No suitable extractor found for URL https://www.tiktok.com/?_r=1", "may have expired"),
+        ("Requested format is not available", "TikTok doesn't offer this video"),
+        ("This video is unavailable", "unavailable on TikTok"),
+    ],
+)
+def test_tiktok_errors_are_explained_in_plain_words(raw, expected):
+    message = str(_friendly(DownloadError(f"ERROR: [TikTok] 7047596209028074758: {raw}"), converter.TIKTOK))
+    assert expected in message
+    assert "YouTube" not in message
+    assert "--" not in message
+    assert "7047596209028074758" not in message
+    assert message.endswith(".")
+
+
+def test_every_error_message_is_a_full_sentence_for_both_sites():
+    for site in converter.SITES:
+        for _, text in converter._ERROR_MESSAGES:
+            message = text.format(site=site.name, noun=site.noun)
+            assert message[0].isupper() and message.endswith("."), message
+            other = next(s for s in converter.SITES if s is not site)
+            assert other.name not in message, message
 
 
 def test_unrecognised_errors_are_passed_on_tidied_and_shortened():

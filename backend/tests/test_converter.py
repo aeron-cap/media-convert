@@ -144,6 +144,74 @@ def test_best_mp4_picks_the_highest_resolution_stream():
     assert chosen("mp4", "best", [combined, *audio, *h264]) == ["137", "140"]
 
 
+def _tiktok_choice(format, quality, formats):
+    """The formats yt-dlp picks from a made-up TikTok format list."""
+    from app.converter import _youtube_dl
+
+    info = {"id": "7047596209028074758", "title": "t", "extractor": "TikTok", "formats": formats}
+    with _youtube_dl({**format_options(format, quality, "tiktok"), "simulate": True}) as ydl:
+        result = ydl.process_video_result(info, download=False)
+    return [part["format_id"] for part in result.get("requested_formats") or [result]]
+
+
+def _tiktok_stream(format_id, height, vcodec, tbr, acodec="aac", **extra):
+    return {
+        "format_id": format_id, "url": f"https://example.test/{format_id}", "ext": "mp4",
+        "protocol": "https", "vcodec": vcodec, "acodec": acodec,
+        "width": height * 9 // 16, "height": height, "tbr": tbr, "preference": -1, **extra,
+    }
+
+
+# Shaped like yt-dlp's TikTok formats: single files with video and audio, a
+# watermarked copy ranked last, a video-only H.265 file and the music track.
+TIKTOK_WATERMARKED = _tiktok_stream(
+    "download", 1024, "h264", 3000, format_note="watermarked", preference=-2
+)
+TIKTOK_MUSIC = {
+    "format_id": "audio", "url": "https://example.test/audio", "ext": "mp3", "protocol": "https",
+    "vcodec": "none", "acodec": "mp3",
+}
+TIKTOK_FORMATS = [
+    TIKTOK_WATERMARKED,
+    _tiktok_stream("h264_540p_600000-0", 1024, "h264", 600),
+    _tiktok_stream("h264_540p_1000000-0", 1024, "h264", 1000),
+    _tiktok_stream("bytevc1_540p_1500000-0", 1024, "h265", 1500),
+    _tiktok_stream("bytevc1_540p_2500000-1", 1024, "h265", 2500, acodec="none"),
+    TIKTOK_MUSIC,
+]
+
+
+def test_tiktok_mp4_takes_clean_h264_over_h265_and_the_watermarked_copy():
+    assert _tiktok_choice("mp4", "best", TIKTOK_FORMATS) == ["h264_540p_1000000-0"]
+    assert _tiktok_choice("mp4", "720", TIKTOK_FORMATS) == ["h264_540p_1000000-0"]
+    assert _tiktok_choice("mkv", "best", TIKTOK_FORMATS) not in (["download"], ["audio"])
+    # A higher resolution still beats the codec preference, as for YouTube.
+    taller = _tiktok_stream("bytevc1_720p_2000000-0", 1280, "h265", 2000)
+    assert _tiktok_choice("mp4", "best", [*TIKTOK_FORMATS, taller]) == ["bytevc1_720p_2000000-0"]
+
+
+def test_tiktok_watermarked_copy_is_used_only_when_it_is_all_there_is():
+    assert _tiktok_choice("mp4", "best", [TIKTOK_WATERMARKED, TIKTOK_MUSIC]) == ["download"]
+
+
+@pytest.mark.parametrize("format", ["mp3", "m4a", "ogg", "flac", "wav"])
+def test_tiktok_audio_comes_from_the_video_not_the_music_track(format):
+    quality = FORMATS[format]["qualities"][0] if FORMATS[format]["qualities"] else None
+    (chosen,) = _tiktok_choice(format, quality, TIKTOK_FORMATS)
+    # Not the music track, not the watermarked copy, and not an H.265 file
+    # (those links are the ones TikTok sometimes fails to serve).
+    assert chosen == "h264_540p_1000000-0"
+    # M4A copies the audio as it is, so it must be AAC.
+    assert next(f for f in TIKTOK_FORMATS if f["format_id"] == chosen)["acodec"] == "aac"
+
+
+def test_youtube_format_options_are_unchanged_by_the_source_argument():
+    for format in FORMATS:
+        assert format_options(format, None) == format_options(format, None, "youtube")
+    assert format_options("m4a", None)["format"] == "bestaudio[ext=m4a]/bestaudio/best"
+    assert format_options("mp4", "best")["format"] == "bv*+ba/b"
+
+
 def test_normalize_quality():
     assert normalize_quality("mp3", None) == "192"
     assert normalize_quality("webm", None) == "best"

@@ -98,6 +98,7 @@ def test_unknown_job_is_404(client):
 def test_probe_returns_video_info(client, monkeypatch):
     info = {
         "kind": "video",
+        "source": "youtube",
         "video_id": "abc123",
         "title": "A video",
         "thumbnail": None,

@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 Format = Literal["mp3", "m4a", "ogg", "flac", "wav", "mp4", "webm", "mkv"]
 Status = Literal["queued", "running", "done", "failed"]
+# The site a link belongs to.
+Source = Literal["youtube", "tiktok"]
 
 
 class ProbeRequest(BaseModel):
@@ -13,8 +15,11 @@ class ProbeRequest(BaseModel):
 
 class VideoInfo(BaseModel):
     kind: Literal["video"] = "video"
+    source: Source
     video_id: str | None
     title: str | None
+    # An absolute https link (YouTube), or a path on this server starting
+    # with /api/thumbnails/ (TikTok, whose own links expire).
     thumbnail: str | None
     duration: int | None
     uploader: str | None
@@ -70,6 +75,8 @@ class BatchQualityUpdate(QualityUpdate):
 class Job(BaseModel):
     id: str
     url: str
+    # The site the link belongs to, worked out from `url`.
+    source: Source
     format: Format
     quality: str | None
     status: Status
@@ -98,7 +105,20 @@ class Job(BaseModel):
         if row["finished_at"] and retention_hours > 0:
             finished = datetime.fromisoformat(row["finished_at"])
             expires_at = (finished + timedelta(hours=retention_hours)).isoformat(timespec="seconds")
-        return cls(**row, download_url=download_url, expires_at=expires_at)
+        return cls(
+            **row, source=_source(row["url"]), download_url=download_url, expires_at=expires_at
+        )
+
+
+def _source(url: str) -> str:
+    # Imported here: the converter loads yt-dlp, which the models don't need.
+    from .converter import ConversionError, source_of
+
+    try:
+        return source_of(url)
+    except ConversionError:
+        # Every job from before TikTok support was a YouTube one.
+        return "youtube"
 
 
 class BatchEntry(BaseModel):

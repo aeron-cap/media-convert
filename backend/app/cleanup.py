@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.concurrency import run_in_threadpool
 
-from . import converter
+from . import converter, thumbnails
 from .config import Settings
 from .db import Database
 
@@ -42,9 +42,17 @@ def run_cleanup(db: Database, settings: Settings) -> dict[str, int]:
                 path.unlink(missing_ok=True)
                 orphans += 1
 
-    if expired or orphans:
-        log.info("clean-up removed %d expired job(s) and %d stray file(s)", expired, orphans)
-    return {"expired": expired, "orphans": orphans}
+    # Stored thumbnails no job shows. Recent ones are kept: they may belong to
+    # a video that was just looked up and is about to be converted.
+    used = {name for name in map(thumbnails.name_of_path, db.thumbnails()) if name}
+    stale_thumbnails = thumbnails.remove_unused(settings.thumbs_dir, used, ORPHAN_AGE)
+
+    if expired or orphans or stale_thumbnails:
+        log.info(
+            "clean-up removed %d expired job(s), %d stray file(s) and %d unused thumbnail(s)",
+            expired, orphans, stale_thumbnails,
+        )
+    return {"expired": expired, "orphans": orphans, "thumbnails": stale_thumbnails}
 
 
 async def cleanup_loop(db: Database, settings: Settings) -> None:

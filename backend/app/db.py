@@ -212,6 +212,14 @@ class Database:
         with self._connect() as conn:
             return {row["id"] for row in conn.execute("SELECT id FROM jobs")}
 
+    def thumbnails(self) -> set[str]:
+        """Every job's thumbnail value (a link or an app path)."""
+        with self._connect() as conn:
+            return {
+                row["thumbnail"]
+                for row in conn.execute("SELECT DISTINCT thumbnail FROM jobs WHERE thumbnail IS NOT NULL")
+            }
+
     # --- Batches: jobs created together from one playlist ---
 
     def create_batch(

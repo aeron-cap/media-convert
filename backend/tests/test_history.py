@@ -107,7 +107,7 @@ def test_cleanup_removes_expired_jobs_and_keeps_recent_ones(client, fake_convert
     long_ago = datetime.now(timezone.utc) - timedelta(hours=settings.retention_hours + 1)
     db.update_job(old["id"], finished_at=long_ago.isoformat(timespec="seconds"))
 
-    assert run_cleanup(db, settings) == {"expired": 1, "orphans": 0}
+    assert run_cleanup(db, settings) == {"expired": 1, "orphans": 0, "thumbnails": 0}
 
     assert [job["id"] for job in client.get("/api/jobs").json()] == [recent["id"]]
     assert files(client) == [f"{recent['id']}.mp3"]
@@ -120,7 +120,7 @@ def test_cleanup_keeps_everything_when_retention_is_off(client, fake_convert, mo
     monkeypatch.setenv("RETENTION_HOURS", "0")
     get_settings.cache_clear()
 
-    assert run_cleanup(db, get_settings()) == {"expired": 0, "orphans": 0}
+    assert run_cleanup(db, get_settings()) == {"expired": 0, "orphans": 0, "thumbnails": 0}
     assert len(client.get("/api/jobs").json()) == 1
 
 
@@ -135,5 +135,5 @@ def test_cleanup_removes_only_old_files_without_a_job(client, fake_convert):
     os.utime(stale, (old, old))
     os.utime(settings.files_dir / f"{job['id']}.mp3", (old, old))
 
-    assert run_cleanup(client.app.state.db, settings) == {"expired": 0, "orphans": 1}
+    assert run_cleanup(client.app.state.db, settings) == {"expired": 0, "orphans": 1, "thumbnails": 0}
     assert files(client) == sorted([f"{job['id']}.mp3", fresh.name])

@@ -33,6 +33,9 @@ def create_batch(body: BatchCreate, request: Request) -> dict:
         quality = converter.normalize_quality(body.format, body.quality)
     except ConversionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    if converter.source_of(url) != "youtube":
+        # The entries are YouTube video ids; TikTok has no playlists here.
+        raise HTTPException(status_code=422, detail="Only YouTube playlists can be converted as a list.")
     if len({entry.video_id for entry in body.entries}) != len(body.entries):
         raise HTTPException(status_code=422, detail="The same video was chosen more than once.")
     _check_room(request, adding=len(body.entries))

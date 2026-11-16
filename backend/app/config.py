@@ -29,8 +29,8 @@ class Settings:
     # Most conversions that may be waiting or running at once; more are refused.
     max_pending_jobs: int
 
-    # --- Staying under YouTube's bot checks ---
-    # Minimum seconds between two metadata fetches, across all jobs.
+    # --- Staying under YouTube's bot checks (they apply to TikTok too) ---
+    # Minimum seconds between two metadata fetches, across all jobs and sites.
     yt_min_interval: float
     # Seconds yt-dlp waits between its own requests while fetching metadata.
     yt_request_sleep: float
@@ -50,6 +50,11 @@ class Settings:
     @property
     def files_dir(self) -> Path:
         return self.data_dir / "files"
+
+    @property
+    def thumbs_dir(self) -> Path:
+        """Thumbnails stored for sites whose own image links expire (TikTok)."""
+        return self.data_dir / "thumbs"
 
 
 @lru_cache
