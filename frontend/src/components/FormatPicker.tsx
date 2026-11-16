@@ -1,22 +1,23 @@
 import { useState } from "preact/hooks";
 
-import type { FormatInfo } from "../api";
-import { formatQuality } from "../format";
+import type { FormatInfo, Source } from "../api";
+import { formatQuality, qualityChoices } from "../format";
 
 const KINDS = [
   { kind: "audio", label: "Audio" },
   { kind: "video", label: "Video" },
 ] as const;
 
-/** The qualities of `format` that make sense for a video of this height. */
-function qualitiesFor(format: FormatInfo, maxHeight: number | null): string[] {
-  if (format.kind !== "video" || maxHeight == null) return format.qualities;
-  return format.qualities.filter((q) => q === "best" || Number(q) <= maxHeight);
-}
-
-function qualityLabel(format: FormatInfo, quality: string, maxHeight: number | null): string {
+function qualityLabel(
+  format: FormatInfo,
+  quality: string,
+  source: Source,
+  maxHeight: number | null,
+): string {
   if (format.kind === "video" && quality === "best") {
-    return maxHeight ? `Best available (${maxHeight}p)` : "Best available";
+    // A TikTok video is usually portrait, where its height reads like a
+    // resolution it doesn't have ("1024p"); it has only one anyway.
+    return maxHeight && source !== "tiktok" ? `Best available (${maxHeight}p)` : "Best available";
   }
   return formatQuality(format.kind, quality);
 }
@@ -33,9 +34,14 @@ export interface FormatChoice {
 /**
  * State and controls for choosing an output format and quality.
  * `maxHeight` is the height of the source video when known; it trims the
- * video quality options to ones the source can actually provide.
+ * video quality options to ones the source can actually provide. `source` is
+ * the site the video comes from: a TikTok video offers only "best".
  */
-export function useFormatChoice(formats: FormatInfo[], maxHeight: number | null): FormatChoice {
+export function useFormatChoice(
+  formats: FormatInfo[],
+  maxHeight: number | null,
+  source: Source = "youtube",
+): FormatChoice {
   const [formatId, setFormatId] = useState("mp3");
   // The quality picked for each format, so switching formats keeps choices.
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -43,7 +49,7 @@ export function useFormatChoice(formats: FormatInfo[], maxHeight: number | null)
   const format = formats.find((f) => f.id === formatId) ?? formats[0];
   if (!format) return { format: undefined, quality: null, picker: null };
 
-  const qualities = qualitiesFor(format, maxHeight);
+  const qualities = qualityChoices(format, source, maxHeight);
   const quality =
     qualities.length === 0
       ? null
@@ -87,7 +93,7 @@ export function useFormatChoice(formats: FormatInfo[], maxHeight: number | null)
                 checked={quality === q}
                 onChange={() => setPicked({ ...picked, [format.id]: q })}
               />
-              <span>{qualityLabel(format, q, maxHeight)}</span>
+              <span>{qualityLabel(format, q, source, maxHeight)}</span>
             </label>
           ))}
         </fieldset>

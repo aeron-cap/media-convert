@@ -238,6 +238,13 @@ summary:focus-visible,
   background: var(--raised);
 }
 
+/* Portrait videos (TikTok) are shown whole on a dark ground, not cropped to
+   a thin strip across the middle. */
+.thumb.portrait {
+  object-fit: contain;
+  background: var(--bg);
+}
+
 .preview-body {
   display: grid;
   gap: 0.9rem;

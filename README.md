@@ -1,11 +1,13 @@
 # Media Convert
 
-Media Convert is a small web app that turns YouTube videos and playlists into audio or video
-files. Paste a link, pick a format, and download the result.
+Media Convert is a small web app that turns YouTube and TikTok videos, and
+YouTube playlists, into audio or video files. Paste a link, pick a format, and
+download the result.
 
+- **Sites:** YouTube videos and playlists, TikTok videos
 - **Audio:** MP3, M4A, OGG, FLAC, WAV
 - **Video:** MP4, WEBM, MKV, up to the video's best resolution
-- **Playlists:** tick the videos you want and download them as one zip
+- **Playlists (YouTube):** tick the videos you want and download them as one zip
 - **History:** finished conversions stay in the list until they expire
 
 ## Self host
@@ -54,11 +56,14 @@ Everything works without configuration. To change something, copy
 | `MAX_DURATION_MINUTES` | `180` | Longest video accepted. `0` removes the limit. |
 | `MAX_PLAYLIST_ITEMS` | `50` | Most videos taken from one playlist. |
 | `MAX_PENDING_JOBS` | `100` | Most conversions waiting or running at once. `0` removes the limit. |
-| `YT_MIN_INTERVAL_SECONDS` | `2` | Minimum gap between lookups on YouTube. |
-| `YT_REQUEST_SLEEP_SECONDS` | `0.5` | Pause between the requests of one lookup. |
+| `YT_MIN_INTERVAL_SECONDS` | `2` | Minimum gap between lookups, on YouTube and TikTok. |
+| `YT_REQUEST_SLEEP_SECONDS` | `0.5` | Pause between the requests of one lookup, on YouTube and TikTok. |
 | `YT_RETRIES` | `2` | Retries when YouTube shows its bot check. |
 | `YT_PROXY` | none | Proxy for all YouTube traffic. |
 | `YT_POT_PROVIDER_URL` | none | Address of a PO token provider (see below). |
+
+The `YT_` settings keep their names from when the app was YouTube only. The
+two pacing ones also space out TikTok lookups; the others are for YouTube.
 
 ### When YouTube asks "are you a bot?"
 
@@ -102,8 +107,8 @@ change the port line in `docker-compose.yml` to
 
 ### Keeping it working
 
-YouTube changes often, and conversions start failing when the downloader falls
-behind. If things that used to work stop working, rebuild:
+YouTube and TikTok change often, and conversions start failing when the
+downloader falls behind. If things that used to work stop working, rebuild:
 
 ```bash
 docker compose build --pull --no-cache
@@ -119,6 +124,7 @@ docker compose up -d
 | --- | --- |
 | [Python](https://www.python.org/) + [FastAPI](https://fastapi.tiangolo.com/) | The server and its API. |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Looks videos up and downloads them. |
+| [curl_cffi](https://github.com/lexiforest/curl_cffi) | Lets yt-dlp connect like a normal browser, which TikTok requires. |
 | [Deno](https://deno.com/) | Runs the small scripts yt-dlp needs to read YouTube's player, in a sandbox. |
 | [ffmpeg](https://ffmpeg.org/) | Converts the download into the format you chose. |
 | [Preact](https://preactjs.com/) + [Vite](https://vite.dev/) | The web page. |
@@ -136,6 +142,7 @@ The page talks to the server through these. Interactive documentation is at
 | `GET` | `/api/health` | Says whether the server and ffmpeg are working. |
 | `GET` | `/api/formats` | Lists the output formats and their quality choices. |
 | `POST` | `/api/probe` | Looks a link up and returns the video's or playlist's details. |
+| `GET` | `/api/thumbnails/{name}` | A thumbnail the server stored (TikTok's links to them expire). |
 | `POST` | `/api/jobs` | Starts converting one video. |
 | `GET` | `/api/jobs` | Lists all conversions, newest first. |
 | `DELETE` | `/api/jobs` | Removes every finished conversion and its file. |
@@ -191,8 +198,12 @@ port 8000.
 
 Things the app refuses on purpose:
 
-- **YouTube only.** Links to any other site are rejected.
-- **Videos and playlists only.** Channel, search and feed links are rejected.
+- **YouTube and TikTok only.** Links to any other site are rejected.
+- **YouTube: videos and playlists only.** Channel, search and feed links are
+  rejected.
+- **TikTok: single videos only.** Profile, hashtag, sound, live and photo
+  post links are rejected, and TikTok has no playlists here. Private and
+  friends-only videos are not converted.
 - **No protected content.** Private, members-only, paid and region-blocked
   videos are not converted, and nothing in the app tries to get around that.
 - **No live streams** while they are still running.
@@ -211,23 +222,30 @@ Things the app can't do, or doesn't do well:
 
 - **No accounts.** Everyone who can open the page shares one list of
   conversions.
-- **It depends on YouTube.** When YouTube changes something, conversions can
-  fail until you rebuild the app. YouTube may also block the server with its
-  bot check, especially on datacenter connections.
+- **It depends on YouTube and TikTok.** When either site changes something,
+  conversions can fail until you rebuild the app. YouTube may also block the
+  server with its bot check, especially on datacenter connections.
+- **TikTok is stricter.** It blocks automated downloads more than YouTube
+  does and changes more often, so TikTok links fail more often. Some posts
+  are blocked in the server's country.
+- **TikTok needs a browser-impersonation add-on** (curl_cffi), which yt-dlp
+  uses to connect like a normal browser. The Docker image includes it.
+- **TikTok videos come in one resolution,** so their video formats have no
+  quality choice; audio bitrates still apply.
 - **Conversions don't survive a restart.** One that was running when the
   server stopped is marked as failed and has to be started again.
 - **Changing the quality of a finished file downloads it again.** The app
-  keeps only the converted file, not YouTube's original, so a new quality
+  keeps only the converted file, not the site's original, so a new quality
   means fetching the video again; the old file is removed straight away.
 - **A running conversion can't be changed,** and the format can't be changed
   at all. Cancel it and start again instead.
 - **Cancelling isn't instant** once a download has finished and ffmpeg is
   converting; it stops when that step ends.
-- **WEBM can be slow**, because the video is re-encoded when YouTube has no
+- **WEBM can be slow**, because the video is re-encoded when the site has no
   WEBM version of it.
 - **MP4 and MKV above 1080p** use newer video formats (VP9 or AV1) that some
   older players can't open.
-- **M4A has no quality choice**; it keeps YouTube's audio exactly as it is.
+- **M4A has no quality choice**; it keeps the site's audio exactly as it is.
 - **One server only.** It isn't built to be spread across several machines or
   to serve many people at once.
 
@@ -237,23 +255,25 @@ Things the app can't do, or doesn't do well:
 under the MIT License; see [License](#license).
 
 **No affiliation.** This project is not affiliated with, endorsed by, or
-sponsored by YouTube or Google. "YouTube" is a trademark of Google LLC and is
-used here only to say what the app works with.
+sponsored by YouTube, Google, TikTok or ByteDance. "YouTube" is a trademark of
+Google LLC and "TikTok" is a trademark of its owner; both are used here only
+to say what the app works with.
 
 **The videos are not ours, and not automatically yours.** This project
 contains no videos, music or other media, hosts none, and gives you no rights
-to any. Videos on YouTube belong to their creators or rights holders. Only
-download what you are allowed to: your own uploads, works in the public
-domain, works under a licence that permits it (such as Creative Commons), or
-works you have the owner's permission for.
+to any. Videos on YouTube and TikTok belong to their creators or rights
+holders. Only download what you are allowed to: your own uploads, works in
+the public domain, works under a licence that permits it (such as Creative
+Commons), or works you have the owner's permission for.
 
 **You are responsible for how you use it.** The person who runs or uses a copy
 of this app decides what it downloads. It is your job to follow the copyright
 law where you live and the terms of any service you use it with, including
-[YouTube's Terms of Service](https://www.youtube.com/t/terms), which restrict
-downloading. The authors and contributors do not control, monitor, or take
-part in what any copy of this software is used for, and accept no
-responsibility for it. That includes anyone who uses it to infringe copyright,
+[YouTube's Terms of Service](https://www.youtube.com/t/terms) and
+[TikTok's Terms of Service](https://www.tiktok.com/legal/page/global/terms-of-service/en),
+which both restrict downloading. The authors and contributors do not
+control, monitor, or take part in what any copy of this software is used for,
+and accept no responsibility for it. That includes anyone who uses it to infringe copyright,
 break a service's terms, resell content, or run a public or paid service.
 
 **Not for getting around protection.** The app does not break DRM or
@@ -273,6 +293,7 @@ licence. Their licences apply to them, not this project's.
 | Project | Licence |
 | --- | --- |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | The Unlicense |
+| [curl_cffi](https://github.com/lexiforest/curl_cffi) | MIT |
 | [ffmpeg](https://ffmpeg.org/legal.html) | LGPL 2.1 or later; GPL for the build in the Docker image |
 | [FastAPI](https://github.com/fastapi/fastapi) | MIT |
 | [Uvicorn](https://github.com/encode/uvicorn) | BSD 3-Clause |

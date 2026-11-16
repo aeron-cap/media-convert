@@ -1,3 +1,22 @@
+import type { FormatInfo, Source } from "./api";
+
+/**
+ * The qualities of `format` that make sense for one video. `maxHeight` is the
+ * video's height when known; a video is never offered more than it has.
+ * TikTok videos come in one resolution only, so their video formats have
+ * nothing to choose but "best". Audio bitrates apply to every site.
+ */
+export function qualityChoices(
+  format: FormatInfo,
+  source: Source,
+  maxHeight: number | null,
+): string[] {
+  if (format.kind !== "video") return format.qualities;
+  if (source === "tiktok") return format.qualities.filter((q) => q === "best");
+  if (maxHeight == null) return format.qualities;
+  return format.qualities.filter((q) => q === "best" || Number(q) <= maxHeight);
+}
+
 export function formatDuration(seconds: number | null): string {
   if (seconds == null) return "";
   const h = Math.floor(seconds / 3600);

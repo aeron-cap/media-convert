@@ -14,9 +14,11 @@ that cost time to learn.
   (`npm run build` does this too).
 - **Check real behaviour in the container,** not only in tests:
   `docker compose up -d --build`, then use http://localhost:8000. Anything that
-  touches yt-dlp options or YouTube links must be tried against a real video.
+  touches yt-dlp options, YouTube links or TikTok links must be tried against
+  a real video.
 - **Use openly licensed videos for testing,** for example the Blender
-  channel's films (`aqz-KE-bpKQ` is Big Buck Bunny).
+  channel's films (`aqz-KE-bpKQ` is Big Buck Bunny). On TikTok, use a video
+  you posted yourself or one whose owner allows it.
 - **Keep user-facing text plain.** Error messages say what happened and what
   to do, in a full sentence, with no yt-dlp or command-line wording.
 - **README sections are fixed:** title, Self host, Stack, Routes, Contributing,
@@ -56,9 +58,9 @@ that cost time to learn.
   once hung a lookup for minutes. `validate_url` accepts only video and
   playlist paths, and `allowed_extractors` names only the video and playlist
   extractors. Don't widen either without testing the new link type for real.
-- **`allowed_extractors` matches extractor names** (`youtube`, `youtube:tab`),
-  case-insensitively. Class-style names such as `YoutubeTab` silently match
-  nothing.
+- **`allowed_extractors` matches extractor names** (`youtube`, `youtube:tab`,
+  `tiktok`, `vm.tiktok`), case-insensitively. Class-style names such as
+  `YoutubeTab` silently match nothing.
 - **Bursts trigger the bot check** ("Sign in to confirm you're not a bot").
   Lookups are spaced by a global throttle and retried. When testing, don't
   fire many lookups at once, and expect the check on datacenter connections.
@@ -77,6 +79,35 @@ that cost time to learn.
   original text. Add a phrase to `_ERROR_MESSAGES` when you meet one; order
   matters, most specific first.
 
+### TikTok
+
+- **TikTok needs yt-dlp's `curl_cffi` extra** (browser impersonation).
+  Without it every TikTok lookup fails with "Unexpected response from webpage
+  request". The image installs it; a local virtual environment needs it too.
+- **Only the `tiktok` and `vm.tiktok` extractors are allowed** (single
+  videos and short links). TikTok's other extractors (profiles, hashtags,
+  sounds, collections, live) lead to endless lists or streams, like YouTube's
+  search links.
+- **yt-dlp's TikTok extractor only matches `www` hosts.** `validate_url`
+  therefore rewrites TikTok links (www host, no query string) and a job's
+  `url` holds the rewritten link. YouTube links are stored as given.
+- **TikTok's `audio` format is the sound's music track,** which can be a whole
+  song instead of what the video plays. Audio output is extracted from the
+  video file instead.
+- **Prefer H.264 on TikTok.** Its H.265 (`bytevc1`) links sometimes fail to
+  download, and H.264 plays everywhere.
+- **The thumbnail fetch uses a private yt-dlp method**
+  (`_impersonate_target_available`). If a yt-dlp update removes it, thumbnails
+  quietly come back empty; conversions are unaffected.
+- **Never choose the `download` format.** TikTok offers a watermarked copy
+  under that id; format selection must skip it.
+- **TikTok thumbnail links are signed and expire.** The server stores a copy
+  when it looks a video up and serves it from `/api/thumbnails/`, so
+  `thumbnail` is then a path on the app, not a link. That also keeps TikTok's
+  image hosts out of the content security policy.
+- **TikTok videos have one resolution,** often portrait (576x1024). The page
+  offers only "best" for TikTok video formats; height tiers mean nothing there.
+
 ### The server and the page
 
 - **The content security policy is strict.** `main.py` allows scripts and
@@ -87,7 +118,9 @@ that cost time to learn.
   a sub-path by a reverse proxy, where `/api/...` would reach another service.
   Requests and links go through `appUrl()` in `api.ts`, and Vite builds with
   `base: "./"`. The server's `download_url` and `zip_url` still start with
-  `/`; pass them through `appUrl()` before using them in the page.
+  `/`; pass them through `appUrl()` before using them in the page. So does a
+  `thumbnail` that starts with `/` (TikTok's); `thumbnailSrc()` does that
+  and leaves absolute YouTube links alone.
 - **Browsers allow about six connections per site.** Only three running jobs
   are followed live (`MAX_LIVE` in `app.tsx`); more would starve every other
   request on the page.

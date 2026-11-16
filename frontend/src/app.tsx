@@ -9,6 +9,8 @@ import {
   listBatches,
   listFormats,
   listJobs,
+  SOURCE_NAMES,
+  sourceOf,
   updateBatchQuality,
   updateJobQuality,
   watchJob,
@@ -190,14 +192,16 @@ export function App() {
     }
   }
 
-  // The text the search box looks through for one conversion: its title,
-  // its type (the format and whether that is audio or video) and its quality,
-  // both as shown ("720p", "320 kbps") and as stored ("720", "best").
+  // The text the search box looks through for one conversion: its title, the
+  // site it came from, its type (the format and whether that is audio or
+  // video) and its quality, both as shown ("720p", "320 kbps") and as stored
+  // ("720", "best").
   function searchText(job: Job): string {
     const format = formats.find((f) => f.id === job.format);
     const batch = batches.find((b) => b.id === job.batch_id);
     return [
       job.title ?? job.url,
+      SOURCE_NAMES[sourceOf(job)],
       batch?.title,
       batch ? "playlist" : "",
       format?.label ?? job.format,
@@ -255,7 +259,7 @@ export function App() {
           <Logo />
           Media Convert
         </h1>
-        <p class="lead">YouTube videos and playlists to audio and video files.</p>
+        <p class="lead">YouTube and TikTok videos, and YouTube playlists, to audio and video files.</p>
       </header>
 
       <div class="workbench">
@@ -285,12 +289,12 @@ export function App() {
           {jobs.length > 0 && (
             <div class="queue-search">
               <label class="visually-hidden" for="queue-search">
-                Search the queue by title, quality or type
+                Search the queue by title, site, quality or type
               </label>
               <input
                 id="queue-search"
                 type="search"
-                placeholder="Search title, quality or type (for example: mp3, 720p, video)"
+                placeholder="Search title, site, quality or type (for example: tiktok, mp3, 720p)"
                 autocomplete="off"
                 value={search}
                 onInput={(event) => setSearch(event.currentTarget.value)}

@@ -1,10 +1,25 @@
 export type Format = string;
 export type Status = "queued" | "running" | "done" | "failed";
+/** The site a video comes from. Playlists are YouTube only. */
+export type Source = "youtube" | "tiktok";
+
+export const SOURCE_NAMES: Record<Source, string> = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+};
+
+/** The site of a video or job; older servers don't say, and were YouTube only. */
+export function sourceOf(item: { source?: string | null }): Source {
+  return item.source === "tiktok" ? "tiktok" : "youtube";
+}
 
 export interface VideoInfo {
   kind: "video";
+  /** Missing from older servers; read it with `sourceOf`. */
+  source?: Source;
   video_id: string | null;
   title: string | null;
+  /** An absolute link, or a path on this server; show it with `thumbnailSrc`. */
   thumbnail: string | null;
   duration: number | null;
   uploader: string | null;
@@ -55,6 +70,8 @@ export interface FormatInfo {
 export interface Job {
   id: string;
   url: string;
+  /** Missing from older servers; read it with `sourceOf`. */
+  source?: Source;
   format: Format;
   quality: string | null;
   status: Status;
@@ -63,6 +80,7 @@ export interface Job {
   error: string | null;
   video_id: string | null;
   title: string | null;
+  /** An absolute link, or a path on this server; show it with `thumbnailSrc`. */
   thumbnail: string | null;
   duration: number | null;
   filesize: number | null;
@@ -86,6 +104,16 @@ export interface Job {
  */
 export function appUrl(path: string): string {
   return path.replace(/^\/+/, "");
+}
+
+/**
+ * The image source for a thumbnail. YouTube's are absolute links and are used
+ * as they are; TikTok's are stored by the server and come as a path such as
+ * "/api/thumbnails/…", which has to follow the page like any other request.
+ */
+export function thumbnailSrc(thumbnail: string | null | undefined): string | null {
+  if (!thumbnail) return null;
+  return thumbnail.startsWith("/") ? appUrl(thumbnail) : thumbnail;
 }
 
 /** An error whose message is meant to be shown to the user as is. */

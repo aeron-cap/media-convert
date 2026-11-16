@@ -5,6 +5,8 @@ import {
   createBatch,
   createJob,
   probe,
+  sourceOf,
+  thumbnailSrc,
   type Batch,
   type FormatInfo,
   type Job,
@@ -76,13 +78,13 @@ export function ConvertForm({
       </div>
       <form class="url-form" onSubmit={find}>
         <label class="visually-hidden" for="url">
-          YouTube video or playlist link
+          Link to a YouTube or TikTok video, or to a YouTube playlist
         </label>
         <input
           id="url"
           type="url"
           inputMode="url"
-          placeholder="Paste a YouTube video or playlist link"
+          placeholder="Paste a YouTube or TikTok link"
           autocomplete="off"
           required
           value={url}
@@ -101,7 +103,8 @@ export function ConvertForm({
 
       {!found && !error && (
         <p class="empty">
-          Works with links to a video (youtube.com/watch, youtu.be, Shorts) or to a playlist.
+          Works with YouTube videos (youtube.com/watch, youtu.be, Shorts) and playlists, and with
+          TikTok videos (tiktok.com/@…/video, vm.tiktok.com).
         </p>
       )}
 
@@ -152,16 +155,27 @@ function VideoCard({
   starting: boolean;
   onConvert: (format: string, quality: string | null) => void;
 }) {
-  const { format, quality, picker } = useFormatChoice(formats, video.max_height);
+  const source = sourceOf(video);
+  const { format, quality, picker } = useFormatChoice(formats, video.max_height, source);
   if (!format) return null;
+  const thumbnail = thumbnailSrc(video.thumbnail);
 
   return (
     <div class="preview">
-      {video.thumbnail && (
-        <img class="thumb" src={video.thumbnail} alt="" referrerpolicy="no-referrer" />
+      {thumbnail && (
+        // TikTok videos are portrait; they are shown whole instead of cropped.
+        <img
+          class={source === "tiktok" ? "thumb portrait" : "thumb"}
+          src={thumbnail}
+          alt=""
+          referrerpolicy="no-referrer"
+        />
       )}
       <div class="preview-body">
-        <h2 class="title">{video.title ?? "Untitled video"}</h2>
+        <h2 class="title">
+          {video.title ?? "Untitled video"}
+          {source === "tiktok" && <> <span class="kind">TikTok</span></>}
+        </h2>
         <p class="meta">
           {[video.uploader, formatDuration(video.duration)].filter(Boolean).join(" · ")}
         </p>

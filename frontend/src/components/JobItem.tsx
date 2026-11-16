@@ -1,5 +1,19 @@
-import { appUrl, isActive, type FormatInfo, type Job } from "../api";
-import { formatDuration, formatExpiry, formatQuality, formatSize } from "../format";
+import {
+  appUrl,
+  isActive,
+  SOURCE_NAMES,
+  sourceOf,
+  thumbnailSrc,
+  type FormatInfo,
+  type Job,
+} from "../api";
+import {
+  formatDuration,
+  formatExpiry,
+  formatQuality,
+  formatSize,
+  qualityChoices,
+} from "../format";
 import { QualitySelect } from "./QualitySelect";
 
 export function JobItem({
@@ -14,9 +28,13 @@ export function JobItem({
   onQualityChange: (job: Job, quality: string) => void;
 }) {
   const format = formats.find((f) => f.id === job.format);
+  const source = sourceOf(job);
+  const thumbnail = thumbnailSrc(job.thumbnail);
   // Quality can be changed while the conversion waits, and again once it has
-  // finished (it is then converted again); only a running one is fixed.
-  const adjustable = job.status !== "running" && format != null && format.qualities.length > 0;
+  // finished (it is then converted again); only a running one is fixed. A
+  // format with one choice or none (M4A, or video from TikTok) has no menu.
+  const adjustable =
+    job.status !== "running" && format != null && qualityChoices(format, source, null).length > 1;
   const details = [
     format?.label ?? job.format.toUpperCase(),
     format && !adjustable ? formatQuality(format.kind, job.quality) : "",
@@ -29,13 +47,16 @@ export function JobItem({
 
   return (
     <li class="job">
-      {job.thumbnail ? (
-        <img class="job-thumb" src={job.thumbnail} alt="" referrerpolicy="no-referrer" />
+      {thumbnail ? (
+        <img class="job-thumb" src={thumbnail} alt="" referrerpolicy="no-referrer" />
       ) : (
         <div class="job-thumb" />
       )}
       <div class="job-body">
-        <p class="job-title">{job.title ?? job.url}</p>
+        <p class="job-title">
+          {job.title ?? job.url}
+          {source === "tiktok" && <> <span class="kind">TikTok</span></>}
+        </p>
         <p class="meta">{details}</p>
         {isActive(job) && <Progress job={job} />}
         {job.status === "failed" && (
@@ -84,7 +105,7 @@ function Progress({ job }: { job: Job }) {
         : job.stage === "converting"
           ? "Converting…"
           : job.stage === "retrying"
-            ? "YouTube is busy, trying again…"
+            ? `${SOURCE_NAMES[sourceOf(job)]} is busy, trying again…`
             : "Starting…";
 
   if (job.status === "queued") {
